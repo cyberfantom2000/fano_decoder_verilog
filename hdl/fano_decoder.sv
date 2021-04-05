@@ -55,12 +55,11 @@ localparam mask_7_8 = 89'h1FFFFFFFFFFFFFFFFFFFFFF;
 // FSM state
 localparam INIT          = 0;   // Инициализация после сброса
 localparam IDLE          = 1;   // Висим здесь если все символы декодированы
-localparam RIBS_CALC     = 2;   // Вычисление ребер для следующего символа
-localparam METRIC_CALC   = 3;   // Вычисление метрик принятого ребра и полученных из RIB_CALC
-localparam FORWARD_MOVE  = 4;
-localparam BACKWARD_MOVE = 5;
-localparam CHECK_POINTER = 6;
-localparam MP_RECALC     = 7;
+localparam METRIC_CALC   = 2;   // Вычисление метрик принятого ребра и полученных из RIB_CALC
+localparam FORWARD_MOVE  = 3;
+localparam BACKWARD_MOVE = 4;
+localparam CHECK_POINTER = 5;
+localparam MP_RECALC     = 6;
 
 genvar i;
 
@@ -68,11 +67,9 @@ genvar i;
 reg[3:0] state, nextstate;
 reg[MAX_SH_W-1:0] A;            // Признак того что надо выбрать худшую метрику
 reg start_rib_calc;
-reg start_metric_calc;
 reg forward_move;
 reg back_move;
 reg start_init;
-reg start_norm;
 reg T_up, T_down;
 reg Mp_recalc;
 reg inverse_A;
@@ -112,10 +109,12 @@ reg        [7 :0] norm_cnt;                    // Счетчик для норм
  // FIXME: Стоит еще подумать над размерностью.
 reg [MAX_SH_W-1:0] V_d, V_p;                    // Регистр для хранения пройденного пути
 reg                nlocal_rst;                  // Внутренний ресет, либо от внешнего, либо при пинке от синхронизатора
+reg                reset_n_rsn;
 
 
 always@(posedge clk) begin
-    nlocal_rst <= reset_n & ~deperf_next_st;
+    nlocal_rst  <= reset_n & ~deperf_next_st;
+    reset_n_rsn <= reset_n;
 end
 
 // Восстановление до кода 1/2 + сдвиг при отсутствии синхронизации
@@ -124,7 +123,7 @@ deperforator#(
     .DEBUG  (DEBUG)
 )deperforator_inst(
     .clk         (clk           ),
-    .reset_n     (reset_n       ),
+    .reset_n     (reset_n_rsn   ),
     // .i_code_rate(),
     .i_sh_pointer(deperf_next_st),
     .i_vld       (i_vld         ),
@@ -171,12 +170,12 @@ assign rib_d = (state == BACKWARD_MOVE) ? (sh_d >> pointer) : (sh_d >> (pointer-
 assign rib_p = (state == BACKWARD_MOVE) ? (sh_p >> pointer) : (sh_p >> (pointer-1));  // FIXME ??? state==BACKWARD_MOVE or state==MP_RECALC
 assign cur_rib = {rib_d, rib_p};
 assign A_w = (state == BACKWARD_MOVE) ? (A >> (pointer)) : (A >> pointer-1); // FIXME old: (A >> (pointer+1)) : (A >> pointer);
-assign to_metric_vld = start_metric_calc || Mp_recalc;
+
 // Вычисление метрик между текущим ребром и ребрами предложеными кодером.
 metric_calc metric_calc_inst0(
     .clk         (clk        ),
     .reset_n     (nlocal_rst ),
-    .i_vld       (encode_vld ), // to_metric_vld
+    .i_vld       (encode_vld ),
     .i_code_rate (i_code_rate),
     .i_rib_0     (rib_0      ), // rib_0_r
     .i_rib_1     (rib_1      ), // rib_1_r
@@ -204,28 +203,6 @@ always@(posedge clk) begin
     end
 end
 
-// generate
-    // for(i=0; i<MAX_SH_W; i++)begin
-        // always@(posedge clk) begin
-            // if(!nlocal_rst)                        decode_sh[i] <= 1'b0;
-            // else if(deperf_vld)                 decode_sh[i] <= (i==0) ? 1'b0 : decode_sh[i-1];
-            // else if(forward_move && pointer[i]) decode_sh[i] <= dec_sym;
-        // end
-        
-        // always@(posedge clk) begin
-            // if(!nlocal_rst) begin
-                // V_d[i] <= 1'b0;
-                // V_p[i] <= 1'b0; 
-            // end else if(deperf_vld) begin
-                // V_d[i] <= (i==0) ? 1'b0 : V_d[i-1];
-                // V_p[i] <= (i==0) ? 1'b0 : V_p[i-1];
-            // end else if(forward_move && pointer[i]) begin
-                // V_d[i] <= path[1];
-                // V_p[i] <= path[0];
-            // end
-        // end
-    // end
-// endgenerate
 
 always@(posedge clk) begin
     if(!nlocal_rst) begin
@@ -249,24 +226,6 @@ always@(posedge clk) begin
         decode_sh <= dec_sym ?  decode_sh |  (256'b1 << (pointer-1)): 
                                 decode_sh & ~(256'b1 << (pointer-1));
 end
-
-
-// always@(posedge clk) begin
-    // if(!nlocal_rst) begin
-        // decode_sh <= 0;
-        // V_d       <= 0;
-        // V_p       <= 0;
-    // end else if(deperf_vld) begin
-        // decode_sh <= {decode_sh[MAX_SH_W-2:0], 1'b0};
-        // V_d       <= {V_d[MAX_SH_W-1:0], 1'b0};
-        // V_p       <= {V_p[MAX_SH_W-1:0], 1'b0};
-    // end else if(forward_move) begin
-        // decode_sh[pointer-1] <= dec_sym;
-        // V_d[pointer-1]       <= path[1];
-        // V_p[pointer-1]       <= path[0];
-    // end
-// end
-
 
 
 always@(posedge clk) begin
@@ -296,7 +255,7 @@ sync_finder#(
     .DEBUG              (DEBUG              )
 )sync_finder_inst( 
     .clk              (clk                  ),
-    .reset_n          (reset_n              ),
+    .reset_n          (reset_n_rsn          ),
     .i_diff_en        (i_diff_en            ),
     .i_norotate_period(i_norotate_period    ),
     .o_next_phase     (o_shift_phs          ),
@@ -382,16 +341,15 @@ end
 always@(*) begin
     nextstate         = 'hX;
     start_rib_calc    = 0;
-    start_metric_calc = 0;
     forward_move      = 0;
     back_move         = 0;
     start_init        = 0;
-    start_norm        = 0;
     T_up              = 0;
     T_down            = 0;
     Mp_recalc         = 0;
     inverse_A         = 0;
     metric_norm       = 0;
+
     
     case(state)
         // Инициализация стартового состояния
@@ -412,37 +370,26 @@ always@(*) begin
             // Если появились новые слова для декодирования
             if(pointer > 0) begin
                 start_rib_calc = 1;
-                nextstate      = RIBS_CALC;            
+                nextstate      = METRIC_CALC;            
             end    
         end
-        
-        // Расчет ребер
-        RIBS_CALC: begin
-            nextstate = RIBS_CALC;
-            norm_en = 1;
-            if (encode_vld) begin
-                rib_0_r           = rib_0;
-                rib_1_r           = rib_1;
-                start_metric_calc = 1;
-                nextstate         = METRIC_CALC;
-            end
-        end
-        
+
         // Расчет метрик между текущим ребром и предполагаемыми из кодера.
         METRIC_CALC: begin
             nextstate = METRIC_CALC;
+            norm_en   = 1;
             if(metric_vld_sh || mp_check) begin
                 if(Ms >= T) begin
                     forward_move = 1;
-                    mp_check = 0;
-                    nextstate    = FORWARD_MOVE;
+                    mp_check  = 0;
+                    nextstate = FORWARD_MOVE;
                 end else if(Mp >= T) begin
                     back_move = 1;
-                    mp_check = 0;
+                    mp_check  = 0;
                     nextstate = BACKWARD_MOVE;
                 end else begin
                     T_down    = 1;
-                    mp_check      = 1;
+                    mp_check  = 1;
                     nextstate = METRIC_CALC;
                 end
             end

@@ -86,8 +86,6 @@ always@(posedge clk) begin
     if (!reset_n) begin
         diff_reg0  <= 0;
         diff_reg1  <= 1;
-        data_r0    <= 0;
-        data_r1    <= 0;
         vld_rsn    <= 0;   
     end else if (i_vld) begin // end else begin ? FIXME
         // Включение/выклчюение дифф декодера
@@ -97,10 +95,18 @@ always@(posedge clk) begin
         end else begin
             diff_reg0  <= 1'b0;
             diff_reg1  <= 1'b1;
-        end             
+        end
+    end
+end
+
+
+always@(posedge clk) begin
+    if(!reset_n) begin
+        data_r0 <= 0;
+        data_r1 <= 0;
     end else begin
-        data_r0[87:0] <= {i_data[87:0], diff_reg0} & mask[88:0]; 
-        data_r1[87:0] <= {i_data[87:0], diff_reg1} & mask[88:0];
+        data_r0[88:0] <= {i_data[88:1], diff_reg0} & mask[88:0]; 
+        data_r1[88:0] <= {i_data[88:1], diff_reg1} & mask[88:0];
     end
 end
 

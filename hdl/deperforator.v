@@ -47,10 +47,11 @@ always@(posedge clk) begin
     if (!reset_n) begin
         sh_reg <= 0;
         sh_vld <= 0;
-    end else begin
+    end else if(i_vld) begin
         sh_reg <= {sh_reg[D_WIDTH-1:0], i_data[D_WIDTH-1:0]};
-        sh_vld <= i_vld;
     end
+    
+    sh_vld <= i_vld;
 end
 
 assign o_vld  = sh_vld;
