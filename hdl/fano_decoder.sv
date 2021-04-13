@@ -59,7 +59,6 @@ localparam METRIC_CALC   = 2;   // Вычисление метрик приня�
 localparam FORWARD_MOVE  = 3;
 localparam BACKWARD_MOVE = 4;
 localparam CHECK_POINTER = 5;
-localparam MP_RECALC     = 6;
 
 genvar i;
 
@@ -97,6 +96,21 @@ wire               dec_sym;
 wire[1         :0] path;
 wire signed[5  :0] metric;
 
+// Mp recalc
+reg         metric_vld_mp_sh;
+wire [88:0] data_to_enc_mp;
+wire        to_enc_vld_mp;
+wire        rib_mp_d, rib_mp_p;
+wire        A_w_mp;
+wire [1 :0] cur_rib_mp;
+wire [1 :0] rib_1_mp, rib_0_mp;
+wire        encode_vld_mp;
+wire [1 :0] path_mp;
+wire signed [5 :0] metric_mp;
+wire        dec_sym_mp;
+wire        metric_vld_mp;
+reg         A_bit_erase;
+
 // deperforator signals
 wire      deperf_vld;
 wire[1:0] deperf_data;
@@ -105,7 +119,8 @@ wire      deperf_next_st;
 reg signed [15:0] T;                           // Текущее значение порога.
 reg signed [15:0] Mp, Mc, Ms;                  // FIXME: Размерность от балды.
 reg        [11:0] forward_cnt;                 // Счетчик шагов вперед
-reg        [7 :0] norm_cnt;                    // Счетчик для нормировки метрик
+// reg        [7 :0] norm_cnt;                    // Счетчик для нормировки метрик
+
  // FIXME: Стоит еще подумать над размерностью.
 reg [MAX_SH_W-1:0] V_d, V_p;                    // Регистр для хранения пройденного пути
 reg                nlocal_rst;                  // Внутренний ресет, либо от внешнего, либо при пинке от синхронизатора
@@ -116,6 +131,7 @@ always@(posedge clk) begin
     nlocal_rst  <= reset_n & ~deperf_next_st;
     reset_n_rsn <= reset_n;
 end
+
 
 // Восстановление до кода 1/2 + сдвиг при отсутствии синхронизации
 deperforator#(
@@ -148,8 +164,8 @@ end
 // Немного запутанно с ходом назад и указателем.
 // assign data_to_enc[88:0] = (state == MP_RECALC) ? {{53{1'b0}}, decode_sh[pointer+code_len1_2:pointer+1]}:
                                                   // {{53{1'b0}}, decode_sh[pointer+code_len1_2-1:pointer]};
-assign data_to_enc[88:0] = (state == MP_RECALC) ? (decode_sh >> (pointer)) & mask_1_2 : (decode_sh >> (pointer-1)) & mask_1_2;
-assign to_enc_vld = start_rib_calc || back_move_sh; // back_move - задержан чтобы указатель успел передвинуться на предидущий символ.
+assign data_to_enc[88:0] = (decode_sh >> (pointer-1)) & mask_1_2;
+assign to_enc_vld = start_rib_calc; // back_move - задержан чтобы указатель успел передвинуться на предидущий символ.
 // Формирование предполагаемых ребер
 recover_encoder#(
     .DEBUG(DEBUG)
@@ -166,40 +182,84 @@ recover_encoder#(
 );
 
 // FIXME здесь было : ? (sh_d >> (pointer+1)) : (sh_d >> pointer)
-assign rib_d = (state == BACKWARD_MOVE) ? (sh_d >> pointer) : (sh_d >> (pointer-1));  // FIXME ??? state==BACKWARD_MOVE or state==MP_RECALC
-assign rib_p = (state == BACKWARD_MOVE) ? (sh_p >> pointer) : (sh_p >> (pointer-1));  // FIXME ??? state==BACKWARD_MOVE or state==MP_RECALC
+assign rib_d = sh_d >> (pointer-1);  // FIXME ??? state==BACKWARD_MOVE or state==MP_RECALC
+assign rib_p = sh_p >> (pointer-1);  // FIXME ??? state==BACKWARD_MOVE or state==MP_RECALC
 assign cur_rib = {rib_d, rib_p};
-assign A_w = (state == BACKWARD_MOVE) ? (A >> (pointer)) : (A >> pointer-1); // FIXME old: (A >> (pointer+1)) : (A >> pointer);
+assign A_w = A >> pointer; // A >> pointer-1;
 
 // Вычисление метрик между текущим ребром и ребрами предложеными кодером.
 metric_calc metric_calc_inst0(
-    .clk         (clk        ),
-    .reset_n     (nlocal_rst ),
-    .i_vld       (encode_vld ),
-    .i_code_rate (i_code_rate),
-    .i_rib_0     (rib_0      ), // rib_0_r
-    .i_rib_1     (rib_1      ), // rib_1_r
-    .i_cur_rib   (cur_rib    ),
-    .A           (A_w        ),
-    .o_vld       (metric_vld ),
-    .o_path      (path       ),
-    .o_metric    (metric     ),
-    .o_decode_sym(dec_sym    )
+    .clk         (clk       ),
+    .reset_n     (nlocal_rst),
+    .i_vld       (encode_vld),
+    .i_delta_T   (i_delta_T ),
+    .i_rib_0     (rib_0     ), // rib_0_r
+    .i_rib_1     (rib_1     ), // rib_1_r
+    .i_cur_rib   (cur_rib   ),
+    .A           (A_w       ),
+    .o_vld       (metric_vld),
+    .o_path      (path      ),
+    .o_metric    (metric    ),
+    .o_decode_sym(dec_sym   )
+);
+
+
+
+// Mp recalc
+// Дублирование модулей recover_encoder и metric_calc чтобы пересчитывать Mp,
+// когда идем назад по кодовому древу.
+assign data_to_enc_mp[88:0] = (decode_sh >> pointer) & mask_1_2;
+assign to_enc_vld_mp = back_move_sh;
+
+recover_encoder#(
+    .DEBUG(DEBUG)
+)recover_encoder_mp_inst(
+    .clk        (clk        ),
+    .reset_n    (nlocal_rst ),
+    .i_diff_en  (i_diff_en  ),
+    .i_code_rate(i_code_rate),
+    .i_vld      (to_enc_vld_mp ),
+    .i_data     (data_to_enc_mp),
+    .o_vld      (encode_vld_mp ),
+    .o_rib_0    (rib_0_mp    ),
+    .o_rib_1    (rib_1_mp   )
+);
+
+assign rib_mp_d = sh_d >> pointer;  // FIXME ??? state==BACKWARD_MOVE or state==MP_RECALC
+assign rib_mp_p = sh_p >> pointer;
+assign cur_rib_mp = {rib_mp_d, rib_mp_p};
+assign A_w_mp = A >> (pointer+1);   // A >> pointer;
+
+metric_calc metric_calc_inst1(
+    .clk         (clk          ),
+    .reset_n     (nlocal_rst   ),
+    .i_vld       (encode_vld_mp),
+    .i_delta_T   (i_delta_T    ),
+    .i_rib_0     (rib_0_mp     ), // rib_0_r
+    .i_rib_1     (rib_1_mp     ), // rib_1_r
+    .i_cur_rib   (cur_rib_mp   ),
+    .A           (A_w_mp       ),
+    .o_vld       (metric_vld_mp),
+    .o_path      (path_mp      ),
+    .o_metric    (metric_mp    ),
+    .o_decode_sym(dec_sym_mp   )
 );
 
 
 // Вычисление метрики будущего пути.
 always@(posedge clk) begin
     if(!nlocal_rst) begin
-        Ms              <= 0;
-        metric_vld_sh   <= 0;
-        forward_move_sh <= 0;
-        back_move_sh    <= 0;
+        Ms               <= 0;
+        metric_vld_sh    <= 0;
+        forward_move_sh  <= 0;
+        back_move_sh     <= 0;
+        metric_vld_mp_sh <= 0;
     end else begin
         if(metric_vld) Ms <= Mc + metric;
-        metric_vld_sh   <= metric_vld;
-        forward_move_sh <= forward_move;
-        back_move_sh    <= back_move;
+        metric_vld_sh     <= metric_vld;
+        metric_vld_mp_sh  <= metric_vld_mp;
+        forward_move_sh   <= forward_move;
+        back_move_sh      <= back_move;
     end
 end
 
@@ -238,12 +298,12 @@ always@(posedge clk) begin
     end else if (back_move) begin
         Mc <= Mp;
     end else if(metric_norm) begin
-        Mp <= Mp - i_forward_step;
-        Mc <= Mc - i_forward_step;
-    end else if(metric_vld && state == MP_RECALC) begin  // FIXME: check state
+        Mp <= Mp >> 1;
+        Mc <= Mc >> 1;
+    end else if(metric_vld_mp) begin  // FIXME: check state
         if     (forward_cnt == 0) Mp <= -16'd32768;
         else if(forward_cnt == 1) Mp <= 16'd0;
-        else                      Mp <= Mp - metric;
+        else                      Mp <= Mp - metric_mp;
     end
 end
 
@@ -278,26 +338,22 @@ always@(posedge clk) begin
     else if(deperf_vld || back_move) pointer <= pointer < MAX_SH_W - code_len1_2 ? pointer + 1 : pointer;   // FIXME: check
     else if(forward_move           ) pointer <= pointer > 0                      ? pointer - 1 : 0;         // FIXME: check
 end
-// always@(posedge clk) begin
-    // if     (!nlocal_rst || start_init ) pointer[MAX_SH_W-1:0] <= 'd1;
-    // else if(deperf_vld || back_move) pointer[MAX_SH_W-1:0] <= {pointer[MAX_SH_W-2:0], 1'b0};
-    // else if(forward_move           ) pointer[MAX_SH_W-1:0] <= {1'b0, pointer[MAX_SH_W:1]};
-// end
+
 
 // Изменение текущего порога
 always@(posedge clk) begin
-    if  (!nlocal_rst || start_init) T <= 0;
-    else if(T_down                ) T <= T - i_delta_T;
-    else if(T_up                  ) T <= T + i_delta_T;
-    else if(metric_norm           ) T <= T - i_forward_step;
+    if(!nlocal_rst || start_init) T <= 0;
+    else if(T_down              ) T <= T - i_delta_T;
+    else if(T_up                ) T <= T + i_delta_T;
+    else if(metric_norm         ) T <= T >> 1;;
 end
 
 // Счетчик нормировки
-always@(posedge clk) begin
-    if  (!nlocal_rst || start_init) norm_cnt <= 0;
-    else if(forward_move          ) norm_cnt <= norm_cnt < i_forward_step ? norm_cnt + 1 : 0; // FIXME (forward_move && T > delta_T)
-    else if(back_move             ) norm_cnt <= norm_cnt > 0              ? norm_cnt - 1 : 0;
-end
+// always@(posedge clk) begin
+    // if  (!nlocal_rst || start_init) norm_cnt <= 0;
+    // else if(forward_move          ) norm_cnt <= norm_cnt < i_forward_step ? norm_cnt + 1 : 0; // FIXME (forward_move && T > delta_T)
+    // else if(back_move             ) norm_cnt <= norm_cnt > 0              ? norm_cnt - 1 : 0;
+// end
 
 // Счетчик шагов вперед
 always@(posedge clk) begin
@@ -306,30 +362,13 @@ always@(posedge clk) begin
     else if(back_move             ) forward_cnt <= forward_cnt > 0        ? forward_cnt - 1 : 0;
 end
 
-// Регистр признаков, что было выбрано худшее ребро
-// generate
-    // for(i=0; i<MAX_SH_W; i++)begin
-        // always@(posedge clk) begin
-            // if(!nlocal_rst)                           A[i] <= 1'b0;
-            // else if(deperf_vld)                    A[i] <= (i==0) ? 1'b0 : A[i-1];
-            // else if(inverse_A && pointer[i])       A[i] <= 1'b1;
-            // else if(forward_move_sh && pointer[i]) A[i] <= 1'b0;
-        // end
-    // end
-// endgenerate
 
 always@(posedge clk) begin
-    if(!nlocal_rst || start_init) A <= 0;
-    else if(deperf_vld          ) A <= A << 1;
-    else if(inverse_A           ) A <= A |  (256'b1 << pointer);
-    else if(forward_move        ) A <= A & ~(256'b1 << (pointer-1));
+    if     (!nlocal_rst || start_init  ) A <= 0;
+    else if(deperf_vld                 ) A <= A << 1;
+    else if(inverse_A                  ) A <= A |  (256'b1 << pointer);
+    else if(forward_move || A_bit_erase) A <= A & ~(256'b1 << pointer);
 end
-// always@(posedge clk) begin
-    // if     (!nlocal_rst    ) A            <= 0;
-    // else if(deperf_vld  ) A            <= {A[MAX_SH_W-2:1], 1'b0};
-    // else if(inverse_A   ) A[pointer]   <= 1'b1;
-    // else if(forward_move) A[pointer-1] <= 1'b0; // После движения вперед следующий путь А = 0
-// end
 
 
 //---------   FSM    -----------//
@@ -337,6 +376,13 @@ always@(posedge clk) begin
     if(!nlocal_rst) state <= INIT;
     else            state <= nextstate;
 end
+
+reg signed[15:0] thresh;
+always@(posedge clk) begin
+    thresh <= T + i_delta_T;
+end
+
+
 
 always@(*) begin
     nextstate         = 'hX;
@@ -349,7 +395,8 @@ always@(*) begin
     Mp_recalc         = 0;
     inverse_A         = 0;
     metric_norm       = 0;
-
+    A_bit_erase       = 0;
+    
     
     case(state)
         // Инициализация стартового состояния
@@ -363,13 +410,15 @@ always@(*) begin
         IDLE: begin
             nextstate = IDLE;
             // При нормировке уменьшаем значения чтобы небыло переполнения
-            if(norm_cnt >= i_forward_step && norm_en) begin
-                metric_norm = 1;
-                norm_en     = 0;
+            if( T == 16'd100 && norm_en) begin // в теории переживать о переполнении при отрицательном пороге не надо,
+                metric_norm = 1;               // потому что при движении по правильному пути метрика постоянно возрастае, а неправильных убывает.
+                norm_en     = 0;               // С неправильного пути мы должны рано или поздно перейти на правильный.
             end
             // Если появились новые слова для декодирования
             if(pointer > 0) begin
+                mp_check       = 0;
                 start_rib_calc = 1;
+                A_bit_erase    = 1; // FIXME: или он должен быть в metric calc&?
                 nextstate      = METRIC_CALC;            
             end    
         end
@@ -378,6 +427,8 @@ always@(*) begin
         METRIC_CALC: begin
             nextstate = METRIC_CALC;
             norm_en   = 1;
+            T_down    = 0;            
+            
             if(metric_vld_sh || mp_check) begin
                 if(Ms >= T) begin
                     forward_move = 1;
@@ -390,7 +441,7 @@ always@(*) begin
                 end else begin
                     T_down    = 1;
                     mp_check  = 1;
-                    nextstate = METRIC_CALC;
+                    nextstate = IDLE;//(forward_cnt == 0) ? IDLE : METRIC_CALC; // IDLE
                 end
             end
         end
@@ -399,7 +450,8 @@ always@(*) begin
         FORWARD_MOVE: begin
             nextstate = FORWARD_MOVE;
             if(forward_move_sh) begin   // FIXME ??????
-                if(Mp < (T + i_delta_T)) T_up = 1;
+                // if(Mp < (T + i_delta_T)) T_up = 1;
+                if(Mp < thresh) T_up = 1;
                 nextstate = IDLE;
             end
         end
@@ -407,18 +459,8 @@ always@(*) begin
         // Движение назад по кодовому древу, если пересекли порог
         BACKWARD_MOVE: begin
             nextstate = BACKWARD_MOVE;
-            if(encode_vld) begin
-                Mp_recalc = 1;
-                rib_0_r   = rib_0;
-                rib_1_r   = rib_1;
-                nextstate = MP_RECALC;
-            end
-        end
-        
-        MP_RECALC: begin            
-            nextstate = MP_RECALC;
-            if(metric_vld_sh) begin
-                if (A[pointer]) begin // В прошлый раз в этом узле ходили по худшему пути? Да - отступаем еще на один узел назад. Нет - пробуем пойти по худшему.
+            if(metric_vld_mp_sh) begin
+                if (A[pointer-1]) begin //if (A[pointer]) begin // В прошлый раз в этом узле ходили по худшему пути? Да - отступаем еще на один узел назад. Нет - пробуем пойти по худшему.
                     if(Mp >= T) begin
                         back_move = 1;
                         nextstate = BACKWARD_MOVE;
@@ -428,9 +470,10 @@ always@(*) begin
                     end
                 end else begin
                     inverse_A  = 1;
+                    start_rib_calc = 1;
                     nextstate  = METRIC_CALC;
                 end
-            end  
+            end
         end
     endcase
 end

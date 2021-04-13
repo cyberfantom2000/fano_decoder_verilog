@@ -24,7 +24,7 @@ module metric_calc(
     input       clk,
     input       reset_n,
     input       i_vld,
-    input       i_code_rate,     // 2'd0 - 1/2, 2'd1 - 3/4, 2'd2 - 7/8
+    input [7:0] i_delta_T,
     input [1:0] i_rib_0,         // Ребро после кодера с символом 0
     input [1:0] i_rib_1,         // Ребро после кодера с символом 1
     input [1:0] i_cur_rib,       // Текущее(принятое) ребро относительно которого ищем путь
@@ -46,10 +46,15 @@ wire       [1:0] metric_0, metric_1;
 reg              sh_vld;
 reg              decode_sym;
 reg        [1:0] path;
-reg signed [5:0] mult_coe;
 reg signed [5:0] metric;
 reg        [1:0] rib_0r, rib_1r, cur_rib_r;
 reg              vld_rsn;
+reg        [7:0] delta_T;
+
+
+always@(posedge clk) begin
+    if(!reset_n) delta_T <= i_delta_T;
+end
 
 //Pipe
 always@(posedge clk) begin
@@ -82,15 +87,6 @@ hamming_distance hamm1(
     .o_metric(metric_1 )
 );
 
-always@(posedge clk) begin
-    if(!reset_n) begin
-        case(i_code_rate)
-            2'd0:    mult_coe <= $signed(-4 );
-            2'b1:    mult_coe <= $signed(-30);
-            default: mult_coe <= $signed(-4 );
-        endcase
-    end
-end
 
 
 always@(posedge clk) begin
@@ -105,16 +101,16 @@ always@(posedge clk) begin
                 path       <= A ? rib_0r : rib_1r;
                 decode_sym <= A ? 1'b0 : 1'b1;
                 if(metric_1 == 2'b0)                     
-                    metric <= A ? $signed(metric_0) * $signed(mult_coe) : $signed(1);                   
+                    metric <= A ? $signed({1'b0, metric_0}) * $signed(-delta_T) : $signed(1);                   
                 else
-                    metric <= A ? $signed(metric_0) * $signed(mult_coe) : $signed(metric_1) * $signed(mult_coe);  
+                    metric <= A ? $signed({1'b0, metric_0}) * $signed(-delta_T) : $signed({1'b0, metric_1}) * $signed(-delta_T); 
             end else begin                
                 path       <= A ? rib_1r : rib_0r;
                 decode_sym <= A ? 1'b1 : 1'b0;
                 if(metric_0 == 2'b0)
-                    metric <= A ? $signed(metric_1) * $signed(mult_coe) : $signed(1);
+                    metric <= A ? $signed({1'b0, metric_1}) * $signed(-delta_T) : $signed(1);
                 else
-                    metric <= A ? $signed(metric_1) * $signed(mult_coe) : $signed(metric_0) * $signed(mult_coe);
+                    metric <= A ? $signed({1'b0, metric_1}) * $signed(-delta_T) : $signed({1'b0, metric_0}) * $signed(-delta_T);
             end
         end
         sh_vld <= hamm_vld;
@@ -122,7 +118,7 @@ always@(posedge clk) begin
 end
 
 assign o_path       = path;
-assign o_metric     = metric;
+assign o_metric     = (metric == 5'b1) ? metric : metric + 5'b1; // FIXME: надо добавить регистр после прибавления 1?
 assign o_decode_sym = decode_sym;
 assign o_vld        = sh_vld;
 

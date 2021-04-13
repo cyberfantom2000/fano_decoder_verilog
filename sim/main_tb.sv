@@ -62,27 +62,57 @@ wire shift_phase;
 wire llr_reset;
 wire sync_ok;
 
+wire [15:0] b = 16'd100;
+wire [15:0] c = b >> 1;
+wire [15:0] d = {1'b0, c[14:0]};
 
-reg [59:0]demode_data = 60'b101001000100111011001100010011100111010101111111011110110111;   // Добавлена ошибка в 6 бите справа, начиная счет с 0
+reg [59:0]demode_data = 60'b101001000100111011001100010011100111010101110111011110110111;   // Добавлена ошибка в 6 и 15 битах справа, начиная счет с 0
 reg       vld_sh;
 reg [1 :0]in_data;
 reg [7 :0]cnt = 0;
 wire[1 :0] a;
-
+// prs signal
+wire      prs_sym;
+wire      prs_vld;
+wire      encoder_vld;
+wire[1:0] encoder_word;
+wire[1:0] err_word;
+wire      err_vld;
 
 assign a = (demode_data >> cnt);
 
 always@(posedge CLK) begin
-    if(!nRESET) begin
-        demode_data <= 60'b101001000100111011001100010011100111010101111111011110110111;    // Добавлена ошибка в 6 бите справа, начиная счет с 0
-        cnt <= 0;
-        in_data <= 0;
-    end else if (VAL_REG && cnt < 60) begin
-        cnt <= cnt + 2;
-        in_data[1:0] <= {a[0], a[1]}; 
-    end
-    vld_sh <= VAL_REG;
+    if     (!nRESET)             cnt <= 0;        
+    else if(VAL_REG && cnt < 60) cnt <= cnt + 2;
 end
+
+prs_gen prs_gen_inst(
+    .clk    (CLK    ),
+    .reset_n(nRESET ),
+    .i_vld  (VAL_REG),
+    .o_vld  (prs_vld),
+    .o_sym  (prs_sym)
+);
+
+conv_encoder encoder_inst(
+    .clk    (CLK         ),
+    .reset_n(nRESET      ),
+    .i_vld  (prs_vld     ),
+    .i_sym  (prs_sym     ),
+    .o_vld  (encoder_vld ),
+    .o_word (encoder_word)
+);
+
+err_generator err_gen_inst(
+    .clk        (CLK         ),
+    .reset_n    (nRESET      ),
+    .i_first_err(11'd4     ),
+    .i_err_rate (11'd100     ),
+    .i_vld      (encoder_vld ),
+    .i_word     (encoder_word),
+    .o_vld      (err_vld     ),
+    .o_word     (err_word    )
+);
 
 fano_decoder#(
     .ROTATE_PERIOD_WIDTH(24),
@@ -99,12 +129,15 @@ fano_decoder#(
     .i_last_phase_stb (1'b0       ),
     .o_shift_phs      (shift_phase),
     .o_llr_reset      (llr_reset  ),
-    .i_vld            (vld_sh     ),
-    .i_data           (in_data    ),
+    .i_vld            (err_vld    ),  // VAL_REG
+    .i_data           (err_word   ),  // {a[0], a[1]}
     .i_delta_T        (8'd5       ),
     .i_forward_step   (8'd10      ),
     .o_is_sync        (sync_ok    )
 );
+
+
+
 
 
 endmodule
