@@ -21,26 +21,26 @@
 
 
 module fano_decoder#(
-    parameter ROTATE_PERIOD_WIDTH = 24,
-    parameter SYNC_PERIOD_WIDTH   = 15,
-    parameter MAX_SH_W = 256,   // Максимальное число шагов назад
-    parameter DEBUG    = 0
+    parameter SYNC_PERIOD_WIDTH = 24,
+    parameter MAX_SH_W          = 256,   // Максимальное число шагов назад
+    parameter DEBUG             = 0
 )(
-    input                           clk,
-    input                           reset_n,
-    input                           i_diff_en,          // включение выключение diff кодера
-    input [1                    :0] i_code_rate,        // 2'd0 - 1/2, 2'd1 - 3/4, 2'd2 - 7/8
-    input [ROTATE_PERIOD_WIDTH-1:0] i_norotate_period,  // Период смены фазы llr формера
-    input [SYNC_PERIOD_WIDTH-1  :0] i_sync_period,      // Период поиска синхронизации 
-    input [SYNC_PERIOD_WIDTH-1  :0] i_sync_threshold,   // Порог (symbols - errors) для захвата
-    input                           i_last_phase_stb,
-    output                          o_shift_phs,
-    output                          o_llr_reset,
-    input                           i_vld,
-    input [1                    :0] i_data,
-    input [7                    :0] i_delta_T,
-    input [7                    :0] i_forward_step,     // Кол-во шагов вперед после которого нормируются метрики
-    output                          o_is_sync
+    input                         clk,
+    input                         reset_n,
+    input                         i_diff_en,          // включение выключение diff кодера
+    input [1                  :0] i_code_rate,        // 2'd0 - 1/2, 2'd1 - 3/4, 2'd2 - 7/8
+    input [SYNC_PERIOD_WIDTH-1:0] i_sync_period,      // Период поиска синхронизации 
+    input [15                 :0] i_sync_threshold,   // Порог для захвата
+    input                         i_last_phase_stb,
+    output                        o_next_phase,
+    output                        o_llr_reset,
+    input                         i_vld,
+    input [1                  :0] i_data,
+    input [7                  :0] i_delta_T,
+    input [7                  :0] i_forward_step,     // Кол-во шагов вперед после которого нормируются метрики
+    output                        o_vld,
+    output                        o_dec_sym,
+    output                        o_is_sync
 );
 
 
@@ -119,7 +119,6 @@ wire      deperf_next_st;
 reg signed [15:0] T;                           // Текущее значение порога.
 reg signed [15:0] Mp, Mc, Ms;                  // FIXME: Размерность от балды.
 reg        [11:0] forward_cnt;                 // Счетчик шагов вперед
-// reg        [7 :0] norm_cnt;                    // Счетчик для нормировки метрик
 
  // FIXME: Стоит еще подумать над размерностью.
 reg [MAX_SH_W-1:0] V_d, V_p;                    // Регистр для хранения пройденного пути
@@ -309,26 +308,44 @@ end
 
 
 // Поиск синхронизации
-sync_finder#(
-    .SYNC_PERIOD_WIDTH  (SYNC_PERIOD_WIDTH  ),
-    .ROTATE_PERIOD_WIDTH(ROTATE_PERIOD_WIDTH),
-    .DEBUG              (DEBUG              )
-)sync_finder_inst( 
-    .clk              (clk                  ),
-    .reset_n          (reset_n_rsn          ),
-    .i_diff_en        (i_diff_en            ),
-    .i_norotate_period(i_norotate_period    ),
-    .o_next_phase     (o_shift_phs          ),
-    .i_code_rate      (i_code_rate          ),
-    .i_sync_period    (i_sync_period        ),
-    .i_sync_threshold (i_sync_threshold     ),
-    .i_last_phase_stb (i_last_phase_stb     ),
-    .i_vld            (deperf_vld           ),
-    .i_encode_data    (deperf_data          ),
-    .i_decode_data    (decode_sh[MAX_SH_W-1]),
-    .o_llr_reset      (o_llr_reset          ),
-    .o_deperf_next_st (deperf_next_st       ),
-    .o_is_sync        (o_is_sync            )    
+
+// sync_finder#(
+    // .SYNC_PERIOD_WIDTH  (SYNC_PERIOD_WIDTH  ),
+    // .ROTATE_PERIOD_WIDTH(ROTATE_PERIOD_WIDTH),
+    // .DEBUG              (DEBUG              )
+// )sync_finder_inst( 
+    // .clk              (clk                  ),
+    // .reset_n          (reset_n_rsn          ),
+    // .i_diff_en        (i_diff_en            ),
+    // .i_norotate_period(i_norotate_period    ),
+    // .o_next_phase     (o_shift_phs          ),
+    // .i_code_rate      (i_code_rate          ),
+    // .i_sync_period    (i_sync_period        ),
+    // .i_sync_threshold (i_sync_threshold     ),
+    // .i_last_phase_stb (i_last_phase_stb     ),
+    // .i_vld            (deperf_vld           ),
+    // .i_encode_data    (deperf_data          ),
+    // .i_decode_data    (decode_sh[MAX_SH_W-1]),
+    // .o_llr_reset      (o_llr_reset          ),
+    // .o_deperf_next_st (deperf_next_st       ),
+    // .o_is_sync        (o_is_sync            )    
+// );
+simple_sync_system#(
+    .SYNC_PERIOD_WIDTH(SYNC_PERIOD_WIDTH),    
+    .DEBUG            (DEBUG            )
+)sync_system_inst(
+    .clk             (clk             ),
+    .reset_n         (reset_n         ),
+    .i_vld           (deperf_vld      ),
+    .i_T_up          (T_up            ),
+    .i_T_down        (T_down          ),
+    .i_sync_period   (i_sync_period   ),
+    .i_sync_threshold(i_sync_threshold),
+    .i_last_phase_stb(i_last_phase_stb),
+    .o_llr_reset     (o_llr_reset     ),
+    .o_next_phase    (o_next_phase    ),
+    .o_deperf_next_st(deperf_next_st  ),
+    .o_is_sync       (o_is_sync       )
 );
 
 
@@ -348,12 +365,6 @@ always@(posedge clk) begin
     else if(metric_norm         ) T <= T >> 1;;
 end
 
-// Счетчик нормировки
-// always@(posedge clk) begin
-    // if  (!nlocal_rst || start_init) norm_cnt <= 0;
-    // else if(forward_move          ) norm_cnt <= norm_cnt < i_forward_step ? norm_cnt + 1 : 0; // FIXME (forward_move && T > delta_T)
-    // else if(back_move             ) norm_cnt <= norm_cnt > 0              ? norm_cnt - 1 : 0;
-// end
 
 // Счетчик шагов вперед
 always@(posedge clk) begin
@@ -381,7 +392,6 @@ reg signed[15:0] thresh;
 always@(posedge clk) begin
     thresh <= T + i_delta_T;
 end
-
 
 
 always@(*) begin
@@ -477,5 +487,8 @@ always@(*) begin
         end
     endcase
 end
+
+assign o_vld = deperf_vld;
+assign o_dec_sym = decode_sh[MAX_SH_W-1];
 
 endmodule

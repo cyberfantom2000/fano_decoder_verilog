@@ -23,6 +23,7 @@
 module err_generator(
     input                 clk,
     input                 reset_n,
+    input                 i_enable,
     input unsigned [11:0] i_first_err, // Номер слова с первой ошибкой
     input unsigned [11:0] i_err_rate,  // Период появления ошибки (начинается после появления первой ошибки)
     input                 i_vld,
@@ -42,8 +43,8 @@ always@(posedge clk) begin
 end
 
 always@(posedge clk) begin
-    if(!reset_n || clear_cnt) cntr <= 0;
-    else if(i_vld)            cntr <= cntr + 1;
+    if(!reset_n || clear_cnt ) cntr <= 0;
+    else if(i_vld && i_enable) cntr <= cntr + 1;
 end
 
 always@(posedge clk) begin

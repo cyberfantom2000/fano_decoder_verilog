@@ -39,7 +39,6 @@ reg signed [IQ_DATA_WIDTH-1:0] I_DATA_Q=100;
 reg [VAL_CNT_WIDTH-1:0] VAL_REG_CNT=0;
 
 integer	fid;
-integer fout, fout1, fout2;
 integer N,i=0;
 	
 initial forever #8  CLK <= !CLK;	//125 MHz
@@ -55,6 +54,8 @@ initial  begin
 end
 
 
+
+
 //============================================================================================================//
 //												Test block's											      //
 //============================================================================================================//
@@ -66,11 +67,8 @@ wire [15:0] b = 16'd100;
 wire [15:0] c = b >> 1;
 wire [15:0] d = {1'b0, c[14:0]};
 
-reg [59:0]demode_data = 60'b101001000100111011001100010011100111010101110111011110110111;   // Добавлена ошибка в 6 и 15 битах справа, начиная счет с 0
 reg       vld_sh;
 reg [1 :0]in_data;
-reg [7 :0]cnt = 0;
-wire[1 :0] a;
 // prs signal
 wire      prs_sym;
 wire      prs_vld;
@@ -78,13 +76,46 @@ wire      encoder_vld;
 wire[1:0] encoder_word;
 wire[1:0] err_word;
 wire      err_vld;
+wire      dec_vld;
+wire      dec_sym;
+reg       wr_vld;
+reg [5:0] cntr;
+reg [7:0] wr_data;
 
-assign a = (demode_data >> cnt);
+integer fout;
+
+initial begin
+    fout = $fopen("dec_sym.bin", "wb");
+    if(fout == 0) begin
+		$display("Error: output TB File  could not be opened.\nExiting Simulation.");
+		$finish;
+	end
+    #500000
+    $fclose(fout);
+end
 
 always@(posedge CLK) begin
-    if     (!nRESET)             cnt <= 0;        
-    else if(VAL_REG && cnt < 60) cnt <= cnt + 2;
+	if(wr_vld)
+        $fwrite(fout,"%c",  wr_data[7:0]);
 end
+
+always@(posedge CLK) begin
+    if(!nRESET) begin
+        cntr       <= 0;
+        wr_data <= 0;
+    end else if(dec_vld) begin
+        cntr <= cntr + 1;
+        wr_data[7:0] <= {wr_data[6:0], dec_sym};
+    end else begin
+        cntr <= (cntr == 6'd8) ? 0 : cntr;
+    end
+end
+
+always@(posedge CLK) begin
+    if(!nRESET) wr_vld <= 0;
+    else        wr_vld <= (cntr == 6'd8) ? 1 : 0;
+end
+
 
 prs_gen prs_gen_inst(
     .clk    (CLK    ),
@@ -106,8 +137,9 @@ conv_encoder encoder_inst(
 err_generator err_gen_inst(
     .clk        (CLK         ),
     .reset_n    (nRESET      ),
-    .i_first_err(11'd4     ),
-    .i_err_rate (11'd100     ),
+    .i_enable   (1'b0        ),
+    .i_first_err(11'd4       ),
+    .i_err_rate (11'd30      ),
     .i_vld      (encoder_vld ),
     .i_word     (encoder_word),
     .o_vld      (err_vld     ),
@@ -115,29 +147,25 @@ err_generator err_gen_inst(
 );
 
 fano_decoder#(
-    .ROTATE_PERIOD_WIDTH(24),
-    .SYNC_PERIOD_WIDTH  (15),
+    .SYNC_PERIOD_WIDTH  (24),
     .MAX_SH_W           (60)
 )fano_decoder_inst(
     .clk              (CLK        ),
     .reset_n          (nRESET     ),
     .i_diff_en        (1'b0       ),
     .i_code_rate      (2'b0       ),
-    .i_norotate_period(24'd40000  ),
-    .i_sync_period    (15'd10000  ),
-    .i_sync_threshold (15'd20000  ),
+    .i_sync_period    (24'd40000  ),
+    .i_sync_threshold (15'd100    ),
     .i_last_phase_stb (1'b0       ),
-    .o_shift_phs      (shift_phase),
+    .o_next_phase     (shift_phase),
     .o_llr_reset      (llr_reset  ),
     .i_vld            (err_vld    ),  // VAL_REG
     .i_data           (err_word   ),  // {a[0], a[1]}
     .i_delta_T        (8'd5       ),
     .i_forward_step   (8'd10      ),
+    .o_vld            (dec_vld    ),
+    .o_dec_sym        (dec_sym    ),
     .o_is_sync        (sync_ok    )
 );
-
-
-
-
 
 endmodule
