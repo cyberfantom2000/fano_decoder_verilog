@@ -50,18 +50,18 @@ reg  [7  :0] vld_rsn;
 reg          diff_reg0, diff_reg1;
 reg          parity_0, parity_1;
 // каскадный xor. Первая цифра - номер каскада, вторая цифра - последний бит.
-reg [63 :0] xor_0_0;
-reg [63 :0] xor_0_1;
-reg [31 :0] xor_1_0;
-reg [31 :0] xor_1_1;
-reg [15 :0] xor_2_0;
-reg [15 :0] xor_2_1;
-reg [7  :0] xor_3_0;
-reg [7  :0] xor_3_1;
-reg [3  :0] xor_4_0;
-reg [3  :0] xor_4_1;
-reg [1  :0] xor_5_0;
-reg [1  :0] xor_5_1;
+reg xor_0_0[63 :0];
+reg xor_0_1[63 :0];
+reg xor_1_0[31 :0];
+reg xor_1_1[31 :0];
+reg xor_2_0[15 :0];
+reg xor_2_1[15 :0];
+reg xor_3_0[7  :0];
+reg xor_3_1[7  :0];
+reg xor_4_0[3  :0];
+reg xor_4_1[3  :0];
+reg xor_5_0[1  :0];
+reg xor_5_1[1  :0];
 
 
 // Code rate select
@@ -86,7 +86,6 @@ always@(posedge clk) begin
     if (!reset_n) begin
         diff_reg0  <= 0;
         diff_reg1  <= 1;
-        vld_rsn    <= 0;   
     end else if (i_vld) begin // end else begin ? FIXME
         // Включение/выклчюение дифф декодера
         if (i_diff_en) begin
@@ -116,12 +115,12 @@ assign data_mask1 = {{39{1'b0}}, data_r1[88:0]};
 
 genvar i;
 // Cascade 0
-generate
+generate 
     for (i=0; i<64; i++) begin
-        always@(posedge clk) begin
+        always@(posedge clk) begin            
             if (!reset_n) begin
-                xor_0_0 <= 0;
-                xor_0_1 <= 0;
+                xor_0_0[i] <= 0;
+                xor_0_1[i] <= 0;
             end else begin
                 xor_0_0[i] <= data_mask0[2*i] ^ data_mask0[2*i+1];
                 xor_0_1[i] <= data_mask1[2*i] ^ data_mask1[2*i+1];
@@ -134,8 +133,8 @@ generate
     for (i=0; i<32; i++) begin
         always@(posedge clk) begin
             if (!reset_n) begin
-                xor_1_0 <= 0;
-                xor_1_1 <= 0;
+                xor_1_0[i] <= 0;
+                xor_1_1[i] <= 0;
             end else begin
                 xor_1_0[i] <= xor_0_0[2*i] ^ xor_0_0[2*i+1];
                 xor_1_1[i] <= xor_0_1[2*i] ^ xor_0_1[2*i+1];
@@ -148,8 +147,8 @@ generate
     for (i=0; i<16; i++) begin
         always@(posedge clk) begin
             if (!reset_n) begin
-                xor_2_0 <= 0;
-                xor_2_1 <= 0;
+                xor_2_0[i] <= 0;
+                xor_2_1[i] <= 0;
             end else begin
                 xor_2_0[i] <= xor_1_0[2*i] ^ xor_1_0[2*i+1];
                 xor_2_1[i] <= xor_1_1[2*i] ^ xor_1_1[2*i+1];
@@ -162,8 +161,8 @@ generate
     for (i=0; i<8; i++) begin
         always@(posedge clk) begin
             if (!reset_n) begin
-                xor_3_0 <= 0;
-                xor_3_1 <= 0;
+                xor_3_0[i] <= 0;
+                xor_3_1[i] <= 0;
             end else begin        
                 xor_3_0[i] <= xor_2_0[2*i] ^ xor_2_0[2*i+1];
                 xor_3_1[i] <= xor_2_1[2*i] ^ xor_2_1[2*i+1];
@@ -176,8 +175,8 @@ generate
     for (i=0; i<4; i++) begin
         always@(posedge clk) begin
             if (!reset_n) begin
-                xor_4_0 <= 0;
-                xor_4_1 <= 0;
+                xor_4_0[i] <= 0;
+                xor_4_1[i] <= 0;
             end else begin
                 xor_4_0[i] <= xor_3_0[2*i] ^ xor_3_0[2*i+1];
                 xor_4_1[i] <= xor_3_1[2*i] ^ xor_3_1[2*i+1];
@@ -190,8 +189,8 @@ generate
     for (i=0; i<2; i++) begin
         always@(posedge clk) begin
             if (!reset_n) begin
-                xor_5_0 <= 0;
-                xor_5_1 <= 0;
+                xor_5_0[i] <= 0;
+                xor_5_1[i] <= 0;
             end else begin
                 xor_5_0[i] <= xor_4_0[2*i] ^ xor_4_0[2*i+1];
                 xor_5_1[i] <= xor_4_1[2*i] ^ xor_4_1[2*i+1];

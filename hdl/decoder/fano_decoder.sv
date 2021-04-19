@@ -21,37 +21,43 @@
 
 
 module fano_decoder#(
-    parameter SYNC_PERIOD_WIDTH = 24,
-    parameter MAX_SH_W          = 256,   // Максимальное число шагов назад
-    parameter DEBUG             = 0
+    parameter SYNC_PERIOD_WIDTH   = 24,
+    parameter MAX_SH_W            = 256,   // Максимальное число шагов назад
+    parameter IQ_WIDTH            = 10,
+    parameter DEBUG               = 0
 )(
     input                         clk,
     input                         reset_n,
+    input                         i_vld,
+    input [IQ_WIDTH-1         :0] i_data_I,
+    input [IQ_WIDTH-1         :0] i_data_Q,
     input                         i_diff_en,          // включение выключение diff кодера
+    input [2                  :0] i_angle_step,
+    input [2                  :0] i_llr_order,
     input [1                  :0] i_code_rate,        // 2'd0 - 1/2, 2'd1 - 3/4, 2'd2 - 7/8
     input [SYNC_PERIOD_WIDTH-1:0] i_sync_period,      // Период поиска синхронизации 
     input [15                 :0] i_sync_threshold,   // Порог для захвата
-    input                         i_last_phase_stb,
-    output                        o_next_phase,
-    output                        o_llr_reset,
-    input                         i_vld,
-    input [1                  :0] i_data,
     input [7                  :0] i_delta_T,
-    input [7                  :0] i_forward_step,     // Кол-во шагов вперед после которого нормируются метрики
+    input [15                 :0] i_forward_step,     // Кол-во шагов вперед после которого нормируются метрики
     output                        o_vld,
     output                        o_dec_sym,
-    output                        o_is_sync
+    output                        o_is_sync,
+    
+    input         i_ctrl_rst,
+    input         i_ctrl_clk,
+    input         i_ctrl_vld,
+    input  [23:0] i_ctrl_data
 );
 
 
 //**********  Constants and parameters  **********//  
-localparam SH_W = MAX_SH_W - 1;
+localparam SH_W        = MAX_SH_W - 1;
 localparam code_len1_2 = 36;
 localparam code_len3_4 = 63;
 localparam code_len7_8 = 89;
-localparam mask_1_2 = 89'hFFFFFFFFF;
-localparam mask_3_4 = 89'h7FFFFFFFFFFFFFFF;
-localparam mask_7_8 = 89'h1FFFFFFFFFFFFFFFFFFFFFF;
+localparam mask_1_2    = 89'hFFFFFFFFF;
+localparam mask_3_4    = 89'h7FFFFFFFFFFFFFFF;
+localparam mask_7_8    = 89'h1FFFFFFFFFFFFFFFFFFFFFF;
 // FSM state
 localparam INIT          = 0;   // Инициализация после сброса
 localparam IDLE          = 1;   // Висим здесь если все символы декодированы
@@ -70,7 +76,6 @@ reg forward_move;
 reg back_move;
 reg start_init;
 reg T_up, T_down;
-reg Mp_recalc;
 reg inverse_A;
 reg mp_check;                   // Флаг для проверки Mp >= T ? mp_check = 0 : mp_check = 1;
 reg norm_en;                    // Флаг разрешения нормировки
@@ -81,7 +86,6 @@ reg [MAX_SH_W-1:0] sh_d;           // Параллельные ргеистры 
 reg [MAX_SH_W-1:0] sh_p;                  
 reg [MAX_SH_W-1:0] decode_sh;      // Регистр в катором хранятся потенциальные декодированные символы
 reg                encode_in_vld;
-reg                out_dec_sym;
 reg                metric_vld_sh, forward_move_sh, back_move_sh;
 reg [1         :0] rib_0_r, rib_1_r;
 wire[1         :0] rib_0, rib_1;
@@ -95,35 +99,37 @@ wire               metric_vld;
 wire               dec_sym;
 wire[1         :0] path;
 wire signed[5  :0] metric;
-
 // Mp recalc
-reg         metric_vld_mp_sh;
-wire [88:0] data_to_enc_mp;
-wire        to_enc_vld_mp;
-wire        rib_mp_d, rib_mp_p;
-wire        A_w_mp;
-wire [1 :0] cur_rib_mp;
-wire [1 :0] rib_1_mp, rib_0_mp;
-wire        encode_vld_mp;
-wire [1 :0] path_mp;
+reg                metric_vld_mp_sh;
+wire [88       :0] data_to_enc_mp;
+wire               to_enc_vld_mp;
+wire               rib_mp_d, rib_mp_p;
+wire               A_w_mp;
+wire [1        :0] cur_rib_mp;
+wire [1        :0] rib_1_mp, rib_0_mp;
+wire               encode_vld_mp;
+wire [1        :0] path_mp;
 wire signed [5 :0] metric_mp;
-wire        dec_sym_mp;
-wire        metric_vld_mp;
-reg         A_bit_erase;
-
+wire               dec_sym_mp;
+wire               metric_vld_mp;
+reg                A_bit_erase;
 // deperforator signals
-wire      deperf_vld;
-wire[1:0] deperf_data;
-wire      deperf_next_st;
+wire              deperf_vld;
+wire              deperf_next_st;
+wire [1       :0] deperf_data;
 // Fano decoder signals
 reg signed [15:0] T;                           // Текущее значение порога.
 reg signed [15:0] Mp, Mc, Ms;                  // FIXME: Размерность от балды.
 reg        [11:0] forward_cnt;                 // Счетчик шагов вперед
-
  // FIXME: Стоит еще подумать над размерностью.
-reg [MAX_SH_W-1:0] V_d, V_p;                    // Регистр для хранения пройденного пути
+// reg [MAX_SH_W-1:0] V_d, V_p;                    // Регистр для хранения пройденного пути
 reg                nlocal_rst;                  // Внутренний ресет, либо от внешнего, либо при пинке от синхронизатора
 reg                reset_n_rsn;
+// llr former signals
+wire               last_phase_stb;
+wire               next_phase;
+wire               is_sync;
+wire               llr_reset;
 
 
 always@(posedge clk) begin
@@ -132,17 +138,48 @@ always@(posedge clk) begin
 end
 
 
+llr_former#(
+    .AUTO_PHASE_CTRL    (0       ),    
+    .IQ_WIDTH           (IQ_WIDTH),
+    .DEBUG              (DEBUG   )
+)llr_former_inst(
+    .i_ctrl_clk       (i_ctrl_clk     ),
+    .i_ctrl_reset     (i_ctrl_rst     ),
+    .i_ctrl_data      (i_ctrl_data    ),
+    .i_ctrl_valid     (i_ctrl_vld     ),
+    
+    .i_clk            (clk            ),
+    .i_reset          (!reset_n_rsn || llr_reset),    
+    
+    .i_mod_type       ({1'b0, i_diff_en}), //   0 - обычная, 1 - офсетная.  // FIXME: одно и тоже что дифф. декодер?
+    .i_llr_order      (i_llr_order    ),
+    .i_angle_step     (i_angle_step   ),
+    .i_rotate_period  (24'b0          ),    
+    .i_shift_phase_stb(next_phase     ),
+    .o_last_phase_stb (last_phase_stb ),
+    .i_sync           (is_sync        ),    
+    // Input    
+    .i_data_i         (i_data_I       ),
+    .i_data_q         (i_data_Q       ),
+    .i_valid          (i_vld          ),    
+    // Output
+    .o_llr            (               ),	
+    .o_harddec        (llr_hd         ),
+    .o_llr_valid      (llr_vld        ),
+    .o_ready          (llr_ready      )
+);
+
+
 // Восстановление до кода 1/2 + сдвиг при отсутствии синхронизации
 deperforator#(
-    .D_WIDTH(2    ),
     .DEBUG  (DEBUG)
 )deperforator_inst(
     .clk         (clk           ),
     .reset_n     (reset_n_rsn   ),
-    // .i_code_rate(),
     .i_sh_pointer(deperf_next_st),
-    .i_vld       (i_vld         ),
-    .i_data      (i_data        ),
+    .i_llr_order (i_llr_order   ),
+    .i_vld       (llr_vld       ),
+    .i_data      (llr_hd        ),
     .o_vld       (deperf_vld    ),
     .o_data      (deperf_data   )
 );
@@ -152,26 +189,21 @@ always@(posedge clk) begin
     if(!nlocal_rst) begin
         sh_d        <= 0;
         sh_p        <= 0;
-        out_dec_sym <= 0;
     end else if(deperf_vld) begin           // Сдвиг если пришло новое кодовое слово то сдвигаем регистры
-        out_dec_sym <= decode_sh[MAX_SH_W-1];
         sh_d        <= {sh_d[MAX_SH_W-2:0], deperf_data[1]};
         sh_p        <= {sh_p[MAX_SH_W-2:0], deperf_data[0]};
     end
 end
 
-// Немного запутанно с ходом назад и указателем.
-// assign data_to_enc[88:0] = (state == MP_RECALC) ? {{53{1'b0}}, decode_sh[pointer+code_len1_2:pointer+1]}:
-                                                  // {{53{1'b0}}, decode_sh[pointer+code_len1_2-1:pointer]};
 assign data_to_enc[88:0] = (decode_sh >> (pointer-1)) & mask_1_2;
-assign to_enc_vld = start_rib_calc; // back_move - задержан чтобы указатель успел передвинуться на предидущий символ.
+assign to_enc_vld = start_rib_calc;
 // Формирование предполагаемых ребер
 recover_encoder#(
     .DEBUG(DEBUG)
 )recover_encoder_inst(
     .clk        (clk        ),
     .reset_n    (nlocal_rst ),
-    .i_diff_en  (i_diff_en  ),
+    .i_diff_en  (i_diff_en  ),  
     .i_code_rate(i_code_rate),
     .i_vld      (to_enc_vld ),
     .i_data     (data_to_enc),
@@ -180,9 +212,9 @@ recover_encoder#(
     .o_rib_1    (rib_1      )
 );
 
-// FIXME здесь было : ? (sh_d >> (pointer+1)) : (sh_d >> pointer)
-assign rib_d = sh_d >> (pointer-1);  // FIXME ??? state==BACKWARD_MOVE or state==MP_RECALC
-assign rib_p = sh_p >> (pointer-1);  // FIXME ??? state==BACKWARD_MOVE or state==MP_RECALC
+
+assign rib_d = sh_d >> (pointer-1);
+assign rib_p = sh_p >> (pointer-1);
 assign cur_rib = {rib_d, rib_p};
 assign A_w = A >> pointer; // A >> pointer-1;
 
@@ -213,21 +245,21 @@ assign to_enc_vld_mp = back_move_sh;
 recover_encoder#(
     .DEBUG(DEBUG)
 )recover_encoder_mp_inst(
-    .clk        (clk        ),
-    .reset_n    (nlocal_rst ),
-    .i_diff_en  (i_diff_en  ),
-    .i_code_rate(i_code_rate),
+    .clk        (clk           ),
+    .reset_n    (nlocal_rst    ),
+    .i_diff_en  (i_diff_en     ),
+    .i_code_rate(i_code_rate   ),
     .i_vld      (to_enc_vld_mp ),
     .i_data     (data_to_enc_mp),
     .o_vld      (encode_vld_mp ),
-    .o_rib_0    (rib_0_mp    ),
-    .o_rib_1    (rib_1_mp   )
+    .o_rib_0    (rib_0_mp      ),
+    .o_rib_1    (rib_1_mp      )
 );
 
-assign rib_mp_d = sh_d >> pointer;  // FIXME ??? state==BACKWARD_MOVE or state==MP_RECALC
-assign rib_mp_p = sh_p >> pointer;
+assign rib_mp_d   = sh_d >> pointer;  // FIXME ??? state==BACKWARD_MOVE or state==MP_RECALC
+assign rib_mp_p   = sh_p >> pointer;
 assign cur_rib_mp = {rib_mp_d, rib_mp_p};
-assign A_w_mp = A >> (pointer+1);   // A >> pointer;
+assign A_w_mp     = A >> (pointer+1);   // A >> pointer;
 
 metric_calc metric_calc_inst1(
     .clk         (clk          ),
@@ -263,18 +295,18 @@ always@(posedge clk) begin
 end
 
 
-always@(posedge clk) begin
-    if(!nlocal_rst) begin
-        V_d <= 0;
-        V_p <= 0;
-    end else if(deperf_vld) begin
-        V_d <= V_d << 1;
-        V_p <= V_p << 1;
-    end else if(forward_move) begin
-        V_d <= path[1] ? V_d | (256'b1 << (pointer-1)) : V_d & ~(256'b1 << (pointer-1));
-        V_p <= path[0] ? V_p | (256'b1 << (pointer-1)) : V_p & ~(256'b1 << (pointer-1));
-    end
-end
+// always@(posedge clk) begin
+    // if(!nlocal_rst) begin
+        // V_d <= 0;
+        // V_p <= 0;
+    // end else if(deperf_vld) begin
+        // V_d <= V_d << 1;
+        // V_p <= V_p << 1;
+    // end else if(forward_move) begin
+        // V_d <= path[1] ? V_d | (256'b1 << (pointer-1)) : V_d & ~(256'b1 << (pointer-1));
+        // V_p <= path[0] ? V_p | (256'b1 << (pointer-1)) : V_p & ~(256'b1 << (pointer-1));
+    // end
+// end
 
 always@(posedge clk) begin
     if(!nlocal_rst) 
@@ -341,11 +373,11 @@ simple_sync_system#(
     .i_T_down        (T_down          ),
     .i_sync_period   (i_sync_period   ),
     .i_sync_threshold(i_sync_threshold),
-    .i_last_phase_stb(i_last_phase_stb),
-    .o_llr_reset     (o_llr_reset     ),
-    .o_next_phase    (o_next_phase    ),
+    .i_last_phase_stb(last_phase_stb  ),
+    .o_llr_reset     (llr_reset       ),
+    .o_next_phase    (next_phase      ),
     .o_deperf_next_st(deperf_next_st  ),
-    .o_is_sync       (o_is_sync       )
+    .o_is_sync       (is_sync         )
 );
 
 
@@ -402,7 +434,6 @@ always@(*) begin
     start_init        = 0;
     T_up              = 0;
     T_down            = 0;
-    Mp_recalc         = 0;
     inverse_A         = 0;
     metric_norm       = 0;
     A_bit_erase       = 0;
@@ -420,7 +451,7 @@ always@(*) begin
         IDLE: begin
             nextstate = IDLE;
             // При нормировке уменьшаем значения чтобы небыло переполнения
-            if( T == 16'd100 && norm_en) begin // в теории переживать о переполнении при отрицательном пороге не надо,
+            if( T == i_forward_step && norm_en) begin // в теории переживать о переполнении при отрицательном пороге не надо,
                 metric_norm = 1;               // потому что при движении по правильному пути метрика постоянно возрастае, а неправильных убывает.
                 norm_en     = 0;               // С неправильного пути мы должны рано или поздно перейти на правильный.
             end
@@ -488,7 +519,8 @@ always@(*) begin
     endcase
 end
 
-assign o_vld = deperf_vld;
+assign o_vld     = deperf_vld;
 assign o_dec_sym = decode_sh[MAX_SH_W-1];
+assign o_is_sync = is_sync;
 
 endmodule

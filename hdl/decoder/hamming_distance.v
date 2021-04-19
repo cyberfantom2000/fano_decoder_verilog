@@ -32,7 +32,7 @@ module hamming_distance(
     output      o_vld,
     output[1:0] o_metric    
 );
-reg [1:0] result;
+reg       result[1:0];
 reg [1:0] bit_cnt;
 reg [1:0] sh_vld;
 
