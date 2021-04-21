@@ -215,4 +215,30 @@ assign o_vld   = vld_rsn[7];
 assign o_rib_0 = {1'b0, parity_0};
 assign o_rib_1 = {1'b1, parity_1};
 
+
+generate
+    if (DEBUG) begin
+        recover_encoder_ila recover_encoder_ila_inst(
+        .clk   (clk),
+        .probe0({reset_n,
+                 i_diff_en,
+                 i_vld,
+                 vld_rsn[7:0]             
+        }),
+        .probe1({i_code_rate[1  :0], 
+                 i_data     [88 :0],
+                 mask       [88 :0],
+                 data_r0    [88 :0],
+                 data_r1    [88 :0],
+                 data_mask0 [127:0],
+                 data_mask1 [127:0],
+                 diff_reg0,
+                 diff_reg1,
+                 o_rib_0    [1  :0],
+                 o_rib_1    [1  :0]
+                })
+        );
+    end
+endgenerate
+
 endmodule

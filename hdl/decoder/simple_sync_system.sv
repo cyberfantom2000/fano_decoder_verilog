@@ -31,7 +31,7 @@ module simple_sync_system#(
     input                         i_T_up,
     input                         i_T_down,
     input [SYNC_PERIOD_WIDTH-1:0] i_sync_period,      // Период поиска синхронизации 
-    input [15                 :0] i_sync_threshold,
+    input [SYNC_PERIOD_WIDTH-1:0] i_sync_threshold,
     input                         i_last_phase_stb,
     output                        o_llr_reset,        // Сброс Llr формера чтобы каждый круг при потере синхры начинать с 0 фазы
     output                        o_next_phase,       // поворнуть фазу в llr формере
@@ -121,5 +121,33 @@ assign o_deperf_next_st = next_st_deperf;
 assign o_llr_reset      = phase_stb_reset;
 assign o_next_phase     = next_phase;
 assign o_is_sync        = is_sync;
+
+
+generate
+    if (DEBUG) begin
+        sync_system_ila sync_system_ila_inst(
+        .clk   (clk),
+        .probe0({reset_n,
+                 i_vld,
+                 i_T_up,
+                 i_T_down,
+                 i_last_phase_stb,
+                 is_sync,
+                 rst_cnt,
+                 o_deperf_next_st,
+                 o_llr_reset,
+                 o_next_phase,
+                 o_is_sync
+        }),
+        .probe1({i_sync_period   [23:0],
+                 i_sync_threshold[23:0],
+                 period_cntr     [23:0],
+                 T_cntr          [23:0],
+                 state           [1 :0]
+                })
+        );
+    end
+endgenerate
+
 
 endmodule

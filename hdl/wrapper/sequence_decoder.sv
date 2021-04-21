@@ -27,7 +27,7 @@ module sequence_decoder#(
     parameter         SYNC_PERIOD_WIDTH  = 24,
     parameter         MAX_SH_W           = 180,
     parameter         IQ_WIDTH           = 10,
-    parameter         DEBUG              = 0
+    parameter         DEBUG              = 1
 )(
     input                clk,
     input [N_CHS-1   :0] i_vld,
@@ -70,13 +70,14 @@ wire [2*N_CHS-1    :0] code_rate;
 wire [3*N_CHS-1    :0] llr_order;
 wire [3*N_CHS-1    :0] angle_step;
 wire [24*N_CHS-1   :0] sync_period;
-wire [16*N_CHS-1   :0] sync_threshold;
+wire [24*N_CHS-1   :0] sync_threshold;
 wire [8*N_CHS-1    :0] delta_T;
 wire [16*N_CHS-1   :0] forward_step;
 wire [N_CHS-1      :0] sync;
 wire [log2(N_CHS)-1:0] ctrl_ch_sel;
 wire [24*N_CHS-1   :0] ctrl_data;
 wire [N_CHS-1      :0] ctrl_vld;
+wire [2*N_CHS-1    :0] offset_mod_en;
 
 genvar ch_idx;
 generate
@@ -90,11 +91,12 @@ generate
             .clk             (clk                                ),
             .reset_n         (~reset        [ch_idx             ]),
             .i_diff_en       (diff_en       [ch_idx             ]),
+            .i_llr_offset_mod(offset_mod_en [2*(ch_idx+1)-1-:  2]),
             .i_angle_step    (llr_order     [3*(ch_idx+1)-1-:  3]),
             .i_llr_order     (llr_order     [3*(ch_idx+1)-1-:  3]),
             .i_code_rate     (code_rate     [2*(ch_idx+1)-1-:  2]),
             .i_sync_period   (sync_period   [24*(ch_idx+1)-1-:24]),
-            .i_sync_threshold(sync_threshold[16*(ch_idx+1)-1-:16]),
+            .i_sync_threshold(sync_threshold[24*(ch_idx+1)-1-:24]),
             .i_vld           (i_vld         [ch_idx             ]),
             .i_data_I        (i_data_I      [10*(ch_idx+1)-1-:10]),
             .i_data_Q        (i_data_Q      [10*(ch_idx+1)-1-:10]),
@@ -118,11 +120,11 @@ stream_crossbar#(
     .N_CHS     (N_CHS)
 )stream_crossbar_inst(
     .i_clk    (i_ctrl_clk                  ),
-    .i_data   (i_ctrl_data[23:0]           ),
     .i_valid  (i_ctrl_vld                  ),
+    .i_data   (i_ctrl_data[23           :0]),
     .i_dev_sel(ctrl_ch_sel[log2(N_CHS)-1:0]),
-    .o_valid  (ctrl_vld [N_CHS-1        :0]),
-    .o_data   (ctrl_data[24*N_CHS-1     :0])
+    .o_valid  (ctrl_vld   [N_CHS-1      :0]),
+    .o_data   (ctrl_data  [24*N_CHS-1   :0])
 );
 
 
@@ -213,11 +215,12 @@ fano_decoder_axi #(
     .o_reset         (reset         [N_CHS-1   :0]),
     .o_ctrl_reset    (ctrl_reset    [N_CHS-1   :0]),
     .o_diff_en       (diff_en       [N_CHS-1   :0]),
+    .o_offset_mod_en (offset_mod_en [2*N_CHS-1 :0]),
     .o_llr_order     (llr_order     [3*N_CHS-1 :0]),
     .o_angle_step    (angle_step    [3*N_CHS-1 :0]),
     .o_code_rate     (code_rate     [2*N_CHS-1 :0]),
     .o_sync_period   (sync_period   [24*N_CHS-1:0]),
-    .o_sync_threshold(sync_threshold[16*N_CHS-1:0]),
+    .o_sync_threshold(sync_threshold[24*N_CHS-1:0]),
     .o_delta_T       (delta_T       [8*N_CHS-1 :0]),
     .o_forward_step  (forward_step  [16*N_CHS-1:0]),
     .o_stream_ch_sel (ctrl_ch_sel[log2(N_CHS)-1:0]),

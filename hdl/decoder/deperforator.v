@@ -44,15 +44,15 @@ reg        out_vld;
 wire       read_enable = i_llr_order == 3'd2 ?  rden_sh[0] : rden_sh[1];
 
 fifo_hd fifo_hd_inst(
-    .clk       (clk       ),
-    .rst       (!reset_n  ),
-    .wr_en     (i_vld     ),
-    .din       (i_data    ),
-    .full      (full      ),
+    .clk       (clk        ),
+    .rst       (!reset_n   ),
+    .wr_en     (i_vld      ),
+    .din       (i_data     ),
+    .full      (full       ),
     .rd_en     (read_enable),        
-    .dout      (dout      ),        
-    .empty     (empty     ),
-    .data_count(data_count)
+    .dout      (dout       ),        
+    .empty     (empty      ),
+    .data_count(data_count )
 );
 
 always@(posedge clk) begin
@@ -115,5 +115,32 @@ end
 
 assign o_vld  = out_vld;
 assign o_data = flag ? sh_reg[2:1] : sh_reg[1:0]; 
- 
+
+
+generate
+    if (DEBUG) begin
+        deperforator_ila deperforator_ila_inst(
+        .clk   (clk),
+        .probe0({reset_n,
+                 rden,
+                 out_vld,
+                 i_vld,
+                 read_enable                 
+        }),
+        .probe1({flag,
+                 state      [2 :0],
+                 rden_sh    [1 :0],
+                 i_llr_order[2 :0],
+                 sh_reg     [2 :0],
+                 o_data     [1 :0],
+                 data_count [10:0],
+                 i_data,
+                 dout,
+                 full,
+                 empty
+                })
+        );
+    end
+endgenerate
+
 endmodule

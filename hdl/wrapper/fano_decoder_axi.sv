@@ -37,11 +37,12 @@ module fano_decoder_axi #(
     output [N_CHS-1      :0] o_reset,
     output [N_CHS-1      :0] o_ctrl_reset,
     output [N_CHS-1      :0] o_diff_en,
+    output [2*N_CHS-1    :0] o_offset_mod_en,
     output [3*N_CHS-1    :0] o_llr_order,
     output [3*N_CHS-1    :0] o_angle_step,    
     output [2*N_CHS-1    :0] o_code_rate,
     output [24*N_CHS-1   :0] o_sync_period,
-    output [16*N_CHS-1   :0] o_sync_threshold,
+    output [24*N_CHS-1   :0] o_sync_threshold,
     output [8*N_CHS-1    :0] o_delta_T,
     output [16*N_CHS-1   :0] o_forward_step,
     output [log2(N_CHS)-1:0] o_stream_ch_sel,
@@ -345,11 +346,12 @@ generate
         assign o_reset         [ch_idx             ] = reset_sreg       [ch_idx][15];           
         assign o_ctrl_reset    [ch_idx             ] = slv_reg_wr_en_reg[ch_idx*N_WR_REGS+2];
         assign o_diff_en       [ch_idx             ] = slv_regs         [ch_idx*N_REGS+3][0];
-        assign o_llr_order     [3*(ch_idx+1)-1-:  3] = slv_regs         [ch_idx*N_REGS+4][2 :0];        
-        assign o_angle_step    [3*(ch_idx+1)-1-:  3] = slv_regs         [ch_idx*N_REGS+4][7 :4];        
+        assign o_offset_mod_en [2*(ch_idx+1)-1-:  2] = slv_regs         [ch_idx*N_REGS+4][1 :0];
+        assign o_llr_order     [3*(ch_idx+1)-1-:  3] = slv_regs         [ch_idx*N_REGS+4][6 :4];        
+        assign o_angle_step    [3*(ch_idx+1)-1-:  3] = slv_regs         [ch_idx*N_REGS+4][10:8];        
         assign o_code_rate     [2*(ch_idx+1)-1-:  2] = slv_regs         [ch_idx*N_REGS+5][1 :0];        
         assign o_sync_period   [24*(ch_idx+1)-1-:24] = slv_regs         [ch_idx*N_REGS+6][23:0];
-        assign o_sync_threshold[16*(ch_idx+1)-1-:16] = slv_regs         [ch_idx*N_REGS+7][15:0];        
+        assign o_sync_threshold[24*(ch_idx+1)-1-:24] = slv_regs         [ch_idx*N_REGS+7][23:0];        
         assign o_delta_T       [8*(ch_idx+1)-1-:  8] = slv_regs         [ch_idx*N_REGS+8][7 :0];
         assign o_forward_step  [16*(ch_idx+1)-1-:16] = slv_regs         [ch_idx*N_REGS+9][15:0];
     end
@@ -374,10 +376,13 @@ end
 
 generate
     if (DEBUG) begin
-        params_ils params_ila_inst(
+        params_ila params_ila_inst(
         .clk   (s_axi_aclk),
         .probe0({o_reset         [0   ],
+                 o_ctrl_reset    [0   ],
                  o_diff_en       [0   ],
+                 o_llr_order     [2 :0],
+                 o_angle_step    [2 :0], 
                  o_code_rate     [1 :0],
                  o_sync_period   [23:0],
                  o_sync_threshold[15:0],

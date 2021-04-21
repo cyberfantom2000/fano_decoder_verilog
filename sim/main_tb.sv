@@ -25,7 +25,7 @@ module main_tb();
 localparam IQ_DATA_WIDTH = 10;
 localparam VAL_CNT_WIDTH = 6;
 
-reg CLK 	= 0;
+reg clk 	= 0;
 reg nRESET  = 0;
 reg I_DATA_VAL = 0;
 reg VAL_REG = 1;
@@ -41,13 +41,13 @@ reg [VAL_CNT_WIDTH-1:0] VAL_REG_CNT=0;
 integer	fid;
 integer N,i=0;
 	
-initial forever #8  CLK <= !CLK;	//125 MHz
+initial forever #8  clk <= !clk;	//125 MHz
 initial 		#32 nRESET <= 1;
 
 //блок генерации прореженного велида(чтобы данные не шли сплошным потоком.)	
 initial  begin		
     while (1) begin	
-		@ (posedge CLK);			
+		@ (posedge clk);			
 			VAL_REG_CNT <= VAL_REG_CNT+1;
 			VAL_REG     <= ( VAL_REG_CNT==0 );			
     end
@@ -59,7 +59,7 @@ end
 //============================================================================================================//
 //												Test block's											      //
 //============================================================================================================//
-localparam MODULATION_TYPE = 2;  // 1 - qpsk, else - 8-psk
+localparam MODULATION_TYPE = 0;  // 1 - qpsk, else - bpsk
 
 wire shift_phase;
 wire llr_reset;
@@ -99,12 +99,12 @@ initial begin
     $fclose(fout);
 end
 
-always@(posedge CLK) begin
+always@(posedge clk) begin
 	if(wr_vld)
         $fwrite(fout,"%c",  wr_data[7:0]);
 end
 
-always@(posedge CLK) begin
+always@(posedge clk) begin
     if(!nRESET) begin
         cntr    <= 0;
         wr_data <= 0;
@@ -116,14 +116,14 @@ always@(posedge CLK) begin
     end
 end
 
-always@(posedge CLK) begin
+always@(posedge clk) begin
     if(!nRESET) wr_vld <= 0;
     else        wr_vld <= (cntr == 6'd8) ? 1 : 0;
 end
 
 
 prs_gen prs_gen_inst(
-    .clk    (CLK    ),
+    .clk    (clk    ),
     .reset_n(nRESET ),
     .i_vld  (VAL_REG),
     .o_vld  (prs_vld),
@@ -131,7 +131,7 @@ prs_gen prs_gen_inst(
 );
 
 conv_encoder encoder_inst(
-    .clk    (CLK         ),
+    .clk    (clk         ),
     .reset_n(nRESET      ),
     .i_vld  (prs_vld     ),
     .i_sym  (prs_sym     ),
@@ -140,7 +140,7 @@ conv_encoder encoder_inst(
 );
 
 err_generator err_gen_inst(
-    .clk        (CLK         ),
+    .clk        (clk         ),
     .reset_n    (nRESET      ),
     .i_enable   (1'b0        ),
     .i_first_err(11'd4       ),
@@ -151,7 +151,7 @@ err_generator err_gen_inst(
     .o_word     (err_word    )
 );
 
-always@(posedge CLK) begin
+always@(posedge clk) begin
         if(!nRESET) err_vld_sh <= 0;
         else        err_vld_sh <= err_vld;
 end
@@ -160,7 +160,7 @@ generate
     if(MODULATION_TYPE) begin
         assign llr_order = 2;
     //========= qpsk ===========//
-        always@(posedge CLK) begin
+        always@(posedge clk) begin
             if(!nRESET) begin
                 I          <= 0;
                 Q          <= 0;
@@ -183,89 +183,44 @@ generate
         
         assign vld = err_vld_sh;
     end else begin
-    //========= 8-psk ===========//
-        assign llr_order = 3;
-        reg[3:0]  sh_reg;
-        reg       take_flag = 0;
-        reg       en_flag = 0;
-        wire[2:0] encode_word;
-        reg [1:0] vld_cntr = 0;
-        reg       word_vld;
-        always@(posedge CLK) begin
-            if(!nRESET) begin     
-                sh_reg[3:0] <= 0;
-                take_flag   <= 0;
-            end else if(err_vld) begin
-                sh_reg[3:0] <= {sh_reg[1:0], err_word};
-                take_flag   <= vld_cntr == 0 ? take_flag : ~take_flag;
+        reg[2:0] cnt=0;
+        reg      cnt_vld = 0;
+        assign llr_order = 1;
+        always@(posedge clk) begin
+            if     (!nRESET ) cnt <= 0;
+            else if(err_vld ) cnt <= cnt + 2;
+            else if(cnt != 0) cnt <= cnt - 1;
+        end
+        always@(posedge clk) begin
+            if(!nRESET) begin
+                I       <= 0;
+                Q       <= 0;
+                cnt_vld <= 0;
+            end else begin
+                Q <= 0;
+                if(cnt == 2) begin
+                    if(err_word[1]) I <= -10'd180;
+                    else            I <=  10'd180;
+                    cnt_vld <= 1;
+                end else if(cnt == 1) begin
+                    if(err_word[0]) I <= -10'd180;
+                    else            I <=  10'd180;
+                    cnt_vld <= 1;
+                end else begin
+                    cnt_vld <= 0;
+                end
             end
         end
-        
-        always@(posedge CLK) begin
-            if(!nRESET)         vld_cntr <= 0;
-            else if(err_vld_sh) vld_cntr <= vld_cntr == 2 ? 0 : vld_cntr + 1;
-        end
-        
-        assign encode_word[2:0] = take_flag ? sh_reg[3:1] : sh_reg[2:0];
-        
-        always@(posedge CLK) begin
-            if(err_vld_sh && vld_cntr!=0) begin
-                case(encode_word[2:0])
-
-                    3'b000: begin          // 000
-                        I = 10'd236;
-                        Q = 10'd98 ;
-                    end                    
-                    3'b001: begin          // 001
-                        I = 10'd98 ;
-                        Q = 10'd236;
-                    end                    
-
-                    3'b011: begin           // 011
-                        I = -10'd98 ;
-                        Q =  10'd236;
-                    end                    
-                    3'b010: begin           // 010
-                        I = -10'd236;
-                        Q =  10'd98 ;
-                    end                    
-
-                    3'b110: begin           // 110
-                        I = -10'd236;
-                        Q = -10'd98 ;
-                    end                    
-                    3'b111: begin           // 111
-                        I = -10'd98 ;
-                        Q = -10'd236;
-                    end                    
-
-                    3'b101: begin           // 101
-                        I =  10'd98 ;
-                        Q = -10'd236;
-                    end                    
-                    3'b100: begin           // 100
-                        I =  10'd236;
-                        Q = -10'd98 ;
-                    end                    
-                    default: begin
-                        I = 10'd0;
-                        Q = 10'd0;
-                    end                    
-                endcase
-                word_vld <= 1;
-            end else 
-                word_vld <= 0;
-        end
-        assign vld = word_vld;
+        assign vld = cnt_vld;  
     end
 endgenerate
 
 
 fano_decoder#(
-    .SYNC_PERIOD_WIDTH  (24),
-    .MAX_SH_W           (60)
+    .SYNC_PERIOD_WIDTH  (24 ),
+    .MAX_SH_W           (180)
 )fano_decoder_inst(
-    .clk              (CLK      ),
+    .clk              (clk      ),
     .reset_n          (nRESET   ),
     .i_diff_en        (1'b0     ),
     .i_llr_order      (llr_order),

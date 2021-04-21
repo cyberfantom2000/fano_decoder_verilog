@@ -32,11 +32,12 @@ module fano_decoder#(
     input [IQ_WIDTH-1         :0] i_data_I,
     input [IQ_WIDTH-1         :0] i_data_Q,
     input                         i_diff_en,          // включение выключение diff кодера
+    input [1                  :0] i_llr_offset_mod,
     input [2                  :0] i_angle_step,
     input [2                  :0] i_llr_order,
     input [1                  :0] i_code_rate,        // 2'd0 - 1/2, 2'd1 - 3/4, 2'd2 - 7/8
     input [SYNC_PERIOD_WIDTH-1:0] i_sync_period,      // Период поиска синхронизации 
-    input [15                 :0] i_sync_threshold,   // Порог для захвата
+    input [SYNC_PERIOD_WIDTH-1:0] i_sync_threshold,   // Порог для захвата
     input [7                  :0] i_delta_T,
     input [15                 :0] i_forward_step,     // Кол-во шагов вперед после которого нормируются метрики
     output                        o_vld,
@@ -131,10 +132,15 @@ wire               next_phase;
 wire               is_sync;
 wire               llr_reset;
 
+reg               vld_rsn;
+reg[IQ_WIDTH-1:0] I_rsn, Q_rsn;
 
 always@(posedge clk) begin
     nlocal_rst  <= reset_n & ~deperf_next_st;
     reset_n_rsn <= reset_n;
+    vld_rsn     <= i_vld;
+    I_rsn       <= i_data_I;
+    Q_rsn       <= i_data_Q;
 end
 
 
@@ -143,30 +149,29 @@ llr_former#(
     .IQ_WIDTH           (IQ_WIDTH),
     .DEBUG              (DEBUG   )
 )llr_former_inst(
-    .i_ctrl_clk       (i_ctrl_clk     ),
-    .i_ctrl_reset     (i_ctrl_rst     ),
-    .i_ctrl_data      (i_ctrl_data    ),
-    .i_ctrl_valid     (i_ctrl_vld     ),
+    .i_ctrl_clk       (i_ctrl_clk      ),
+    .i_ctrl_reset     (i_ctrl_rst      ),
+    .i_ctrl_data      (i_ctrl_data     ),
+    .i_ctrl_valid     (i_ctrl_vld      ),
     
-    .i_clk            (clk            ),
+    .i_clk            (clk             ),
     .i_reset          (!reset_n_rsn || llr_reset),    
-    
-    .i_mod_type       ({1'b0, i_diff_en}), //   0 - обычная, 1 - офсетная.  // FIXME: одно и тоже что дифф. декодер?
-    .i_llr_order      (i_llr_order    ),
-    .i_angle_step     (i_angle_step   ),
-    .i_rotate_period  (24'b0          ),    
-    .i_shift_phase_stb(next_phase     ),
-    .o_last_phase_stb (last_phase_stb ),
-    .i_sync           (is_sync        ),    
-    // Input    
-    .i_data_i         (i_data_I       ),
-    .i_data_q         (i_data_Q       ),
-    .i_valid          (i_vld          ),    
-    // Output
-    .o_llr            (               ),	
-    .o_harddec        (llr_hd         ),
-    .o_llr_valid      (llr_vld        ),
-    .o_ready          (llr_ready      )
+    .i_mod_type       (i_llr_offset_mod), //   0 - обычная, 1 - офсетная.  // FIXME: одно и тоже что дифф. декодер?
+    .i_llr_order      (i_llr_order     ),
+    .i_angle_step     (i_angle_step    ),
+    .i_rotate_period  (24'b0           ),    
+    .i_shift_phase_stb(next_phase      ),
+    .o_last_phase_stb (last_phase_stb  ),
+    .i_sync           (is_sync         ),    
+    // Input                           
+    .i_data_i         (I_rsn           ),
+    .i_data_q         (Q_rsn           ),
+    .i_valid          (vld_rsn         ),    
+    // Output                          
+    .o_llr            (                ),	
+    .o_harddec        (llr_hd          ),
+    .o_llr_valid      (llr_vld         ),
+    .o_ready          (llr_ready       )
 );
 
 
@@ -219,7 +224,9 @@ assign cur_rib = {rib_d, rib_p};
 assign A_w = A >> pointer; // A >> pointer-1;
 
 // Вычисление метрик между текущим ребром и ребрами предложеными кодером.
-metric_calc metric_calc_inst0(
+metric_calc#(
+    .DEBUG(DEBUG)
+) metric_calc_inst0(
     .clk         (clk       ),
     .reset_n     (nlocal_rst),
     .i_vld       (encode_vld),
@@ -261,7 +268,9 @@ assign rib_mp_p   = sh_p >> pointer;
 assign cur_rib_mp = {rib_mp_d, rib_mp_p};
 assign A_w_mp     = A >> (pointer+1);   // A >> pointer;
 
-metric_calc metric_calc_inst1(
+metric_calc#(
+    .DEBUG(DEBUG)
+) metric_calc_inst1(
     .clk         (clk          ),
     .reset_n     (nlocal_rst   ),
     .i_vld       (encode_vld_mp),
@@ -295,19 +304,6 @@ always@(posedge clk) begin
 end
 
 
-// always@(posedge clk) begin
-    // if(!nlocal_rst) begin
-        // V_d <= 0;
-        // V_p <= 0;
-    // end else if(deperf_vld) begin
-        // V_d <= V_d << 1;
-        // V_p <= V_p << 1;
-    // end else if(forward_move) begin
-        // V_d <= path[1] ? V_d | (256'b1 << (pointer-1)) : V_d & ~(256'b1 << (pointer-1));
-        // V_p <= path[0] ? V_p | (256'b1 << (pointer-1)) : V_p & ~(256'b1 << (pointer-1));
-    // end
-// end
-
 always@(posedge clk) begin
     if(!nlocal_rst) 
         decode_sh <= 0;
@@ -340,28 +336,6 @@ end
 
 
 // Поиск синхронизации
-
-// sync_finder#(
-    // .SYNC_PERIOD_WIDTH  (SYNC_PERIOD_WIDTH  ),
-    // .ROTATE_PERIOD_WIDTH(ROTATE_PERIOD_WIDTH),
-    // .DEBUG              (DEBUG              )
-// )sync_finder_inst( 
-    // .clk              (clk                  ),
-    // .reset_n          (reset_n_rsn          ),
-    // .i_diff_en        (i_diff_en            ),
-    // .i_norotate_period(i_norotate_period    ),
-    // .o_next_phase     (o_shift_phs          ),
-    // .i_code_rate      (i_code_rate          ),
-    // .i_sync_period    (i_sync_period        ),
-    // .i_sync_threshold (i_sync_threshold     ),
-    // .i_last_phase_stb (i_last_phase_stb     ),
-    // .i_vld            (deperf_vld           ),
-    // .i_encode_data    (deperf_data          ),
-    // .i_decode_data    (decode_sh[MAX_SH_W-1]),
-    // .o_llr_reset      (o_llr_reset          ),
-    // .o_deperf_next_st (deperf_next_st       ),
-    // .o_is_sync        (o_is_sync            )    
-// );
 simple_sync_system#(
     .SYNC_PERIOD_WIDTH(SYNC_PERIOD_WIDTH),    
     .DEBUG            (DEBUG            )
@@ -522,5 +496,83 @@ end
 assign o_vld     = deperf_vld;
 assign o_dec_sym = decode_sh[MAX_SH_W-1];
 assign o_is_sync = is_sync;
+
+
+generate
+    if (DEBUG) begin
+        fano_decoder_ila fano_decoder_ila_inst(
+        .clk   (clk),
+        .probe0({reset_n,
+                 nlocal_rst,
+                 reset_n_rsn,
+                 vld_rsn,
+                 o_vld,
+                 o_is_sync,
+                 start_init,
+                 mp_check,
+                 metric_norm,
+                 norm_en,
+                 start_rib_calc,
+                 forward_move,
+                 forward_move_sh,
+                 back_move,
+                 back_move_sh,
+                 metric_vld_mp,
+                 metric_vld_mp_sh,
+                 T_down,
+                 T_up,
+                 A_bit_erase,
+                 inverse_A,
+                 llr_reset,
+                 next_phase,
+                 last_phase_stb,
+                 llr_hd,
+                 llr_vld,
+                 deperf_next_st,
+                 deperf_vld,
+                 metric_vld,
+                 path,
+                 dec_sym,
+                 path_mp,
+                 dec_sym_mp                 
+                }),
+        .probe1({I_rsn           [9  :0],
+                 Q_rsn           [9  :0],
+                 i_delta_T       [7  :0],
+                 i_angle_step    [2  :0],
+                 i_code_rate     [1  :0],
+                 i_diff_en,   
+                 i_llr_order     [2  :0],
+                 i_sync_period   [23 :0],
+                 i_sync_threshold[23 :0],
+                 i_forward_step  [15 :0],
+                 o_dec_sym,
+                 forward_cnt     [11 :0],
+                 A               [179:0],
+                 pointer         [179:0],
+                 decode_sh       [179:0],
+                 sh_d            [179:0],
+                 sh_p            [179:0],
+                 state           [3  :0],
+                 thresh          [15 :0],
+                 T               [15 :0],
+                 Ms              [15 :0],
+                 Mc              [15 :0],
+                 Mp              [15 :0],
+                 deperf_data     [1  :0],
+                 data_to_enc     [88 :0],
+                 rib_0           [1  :0],
+                 rib_1           [1  :0],
+                 cur_rib         [1  :0],
+                 metric          [5  :0],
+                 rib_0_mp        [1  :0],
+                 rib_1_mp        [1  :0],
+                 cur_rib_mp      [1  :0],
+                 metric_mp       [5  :0]
+                })
+        );
+    end
+endgenerate
+
 
 endmodule

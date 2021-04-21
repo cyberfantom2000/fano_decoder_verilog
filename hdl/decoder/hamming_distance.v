@@ -22,7 +22,9 @@
 // Реализовано отстойно. Приходит две последовательности по 2 бита и маска 2 бита.
 // Если бит i = 1  маски то в выходной регистр в бит i записывается результат XOR,
 // Иначе 0.
-module hamming_distance(
+module hamming_distance#(
+    parameter DEBUG = 0
+)(
     input       clk,
     input       reset_n,
     input       i_vld,
@@ -51,12 +53,34 @@ always@(posedge clk) begin
         sh_vld  <= 0;
         bit_cnt <= 0;
     end else begin
-        if(sh_vld[0]) bit_cnt <= result[1] + result[0];
+        if(sh_vld[0]) 
+            bit_cnt <= result[1] + result[0];
         sh_vld  <= {sh_vld[0], i_vld};        
     end
 end
 
 assign o_vld = sh_vld[1];
 assign o_metric = bit_cnt;
+
+generate
+    if (DEBUG) begin
+        hamm_dist_ila hamm_dist_ila_inst(
+        .clk   (clk),
+        .probe0({reset_n,
+                 i_vld,
+                 o_vld,
+                 sh_vld[1:0]
+        }),
+        .probe1({i_a     [1:0],
+                 i_b     [1:0],
+                 bit_cnt [1:0],
+                 result  [0],
+                 result  [1],
+                 i_mask  [1:0],
+                 o_metric[1:0]
+                })
+        );
+    end
+endgenerate
 
 endmodule

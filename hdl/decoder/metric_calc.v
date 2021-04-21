@@ -20,7 +20,9 @@
 //////////////////////////////////////////////////////////////////////////////////
 
 // Пока что сделано в лоб для 1/2
-module metric_calc(
+module metric_calc#(
+    parameter DEBUG = 0
+)(
     input       clk,
     input       reset_n,
     input       i_vld,
@@ -65,7 +67,9 @@ always@(posedge clk) begin
 end
 
 
-hamming_distance hamm0(
+hamming_distance#(
+    .DEBUG(DEBUG)
+) hamm0(
     .clk     (clk      ),
     .reset_n (reset_n  ),
     .i_vld   (vld_rsn  ),
@@ -76,7 +80,9 @@ hamming_distance hamm0(
     .o_metric(metric_0)
 );
 
-hamming_distance hamm1(
+hamming_distance#(
+    .DEBUG(DEBUG)
+) hamm1(
     .clk     (clk      ),
     .reset_n (reset_n  ),
     .i_vld   (vld_rsn  ),
@@ -121,5 +127,32 @@ assign o_path       = path;
 assign o_metric     = (metric == 5'b1) ? metric : metric + 5'b1; // FIXME: надо добавить регистр после прибавления 1?
 assign o_decode_sym = decode_sym;
 assign o_vld        = sh_vld;
+
+generate
+    if (DEBUG) begin
+        metric_calc_ila metric_calc_ila_inst(
+        .clk   (clk),
+        .probe0({reset_n,
+                 vld_rsn,
+                 hamm_vld,
+                 o_vld
+        }),
+        .probe1({rib_0r   [1:0],
+                 rib_1r   [1:0],
+                 cur_rib_r[1:0],
+                 metric_0 [1:0],
+                 metric_1 [1:0],
+                 i_delta_T[7:0],
+                 delta_T  [7:0],
+                 metric   [5:0],
+                 o_metric [5:0],
+                 o_decode_sym,
+                 o_path,
+                 A                 
+                })
+        );
+    end
+endgenerate
+
 
 endmodule
