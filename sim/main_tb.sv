@@ -233,8 +233,11 @@ fano_decoder#(
     .i_data_Q         (Q        ),
     .i_delta_T        (8'd5     ),
     .i_forward_step   (16'd100  ),
-    .o_vld            (dec_vld  ),
-    .o_dec_sym        (dec_sym  ),
+    .o_vld            (  ),
+    .o_dec_data       (  ),
+    //test
+    .test_dec_sym     (dec_sym  ),
+    .test_dec_vld     (dec_vld  ),
     .o_is_sync        (sync_ok  )
 );
 

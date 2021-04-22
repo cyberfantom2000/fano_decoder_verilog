@@ -34,7 +34,7 @@ module sequence_decoder#(
     input [10*N_CHS-1:0] i_data_I,
     input [10*N_CHS-1:0] i_data_Q,
     output[N_CHS-1   :0] o_vld,
-    output[N_CHS-1   :0] o_dec_sym,
+    output[8*N_CHS-1 :0] o_dec_data,
     // ctrl stream
     input        i_ctrl_clk,
     input        i_ctrl_vld,
@@ -78,6 +78,8 @@ wire [log2(N_CHS)-1:0] ctrl_ch_sel;
 wire [24*N_CHS-1   :0] ctrl_data;
 wire [N_CHS-1      :0] ctrl_vld;
 wire [2*N_CHS-1    :0] offset_mod_en;
+wire [N_CHS-1      :0] isndata, ismirrordata, 
+                       ismirrorbyte, ismirrorword;
 
 genvar ch_idx;
 generate
@@ -103,8 +105,13 @@ generate
             .i_delta_T       (delta_T       [8*(ch_idx+1)-1-:  8]),
             .i_forward_step  (forward_step  [16*(ch_idx+1)-1-:16]),
             .o_vld           (o_vld         [ch_idx             ]),
-            .o_dec_sym       (o_dec_sym     [ch_idx             ]),
+            .o_dec_data      (o_dec_data    [8*(ch_idx+1)-1-:  8]),
             .o_is_sync       (sync          [ch_idx             ]),
+            // upak param 
+            .i_isndata       (isndata       [ch_idx             ]),
+            .i_ismirrordata  (ismirrordata  [ch_idx             ]),
+            .i_ismirrorbyte  (ismirrorbyte  [ch_idx             ]),
+            .i_ismirrorword  (ismirrorword  [ch_idx             ]),
             // ctrl channel stream
             .i_ctrl_rst (ctrl_reset[ch_idx            ]),
             .i_ctrl_clk (i_ctrl_clk                    ),
@@ -114,7 +121,7 @@ generate
     end
 endgenerate
 
-
+// Переключение потока между каналами.
 stream_crossbar#(
     .DATA_WIDTH(24   ),
     .N_CHS     (N_CHS)
@@ -208,6 +215,8 @@ axi_clock_converter_fano axi_clock_converter_fano_inst (
   .m_axi_rready (s_axi_rready_cc )  // output  wire m_axi_rready
 );
 
+
+
 fano_decoder_axi #(
     .N_CHS(N_CHS),
     .DEBUG(DEBUG)
@@ -224,6 +233,10 @@ fano_decoder_axi #(
     .o_delta_T       (delta_T       [8*N_CHS-1 :0]),
     .o_forward_step  (forward_step  [16*N_CHS-1:0]),
     .o_stream_ch_sel (ctrl_ch_sel[log2(N_CHS)-1:0]),
+    .o_isndata       (isndata       [N_CHS-1   :0]),
+	.o_ismirrordata  (ismirrordata  [N_CHS-1   :0]),
+	.o_ismirrorbyte  (ismirrorbyte  [N_CHS-1   :0]),
+	.o_ismirrorword  (ismirrorword  [N_CHS-1   :0]),
     .i_sync          (sync          [N_CHS-1   :0]),
     // AXI-Lite
     .s_axi_aclk   (s_axi_aclk_cc   ),

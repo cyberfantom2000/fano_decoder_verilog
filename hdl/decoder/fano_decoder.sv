@@ -41,8 +41,18 @@ module fano_decoder#(
     input [7                  :0] i_delta_T,
     input [15                 :0] i_forward_step,     // Кол-во шагов вперед после которого нормируются метрики
     output                        o_vld,
-    output                        o_dec_sym,
+    output[7                  :0] o_dec_data,
     output                        o_is_sync,
+    
+    //test port
+    output test_dec_sym,
+    output test_dec_vld,
+    
+    // upak parameter
+    input         i_isndata,
+	input         i_ismirrordata,
+	input         i_ismirrorbyte,
+	input         i_ismirrorword,
     
     input         i_ctrl_rst,
     input         i_ctrl_clk,
@@ -94,6 +104,7 @@ wire               metric_vld;
 wire               dec_sym;
 wire[1         :0] path;
 wire signed[5  :0] metric;
+wire[7         :0] upak_input_data;
 // Mp recalc
 reg                metric_vld_mp_sh;
 wire [88       :0] data_to_enc_mp;
@@ -329,24 +340,6 @@ end
 
 
 // Поиск синхронизации
-// simple_sync_system#(
-    // .SYNC_PERIOD_WIDTH(SYNC_PERIOD_WIDTH),    
-    // .DEBUG            (DEBUG            )
-// )sync_system_inst(
-    // .clk             (clk             ),
-    // .reset_n         (reset_n         ),
-    // .i_vld           (deperf_vld      ),
-    // .i_T_up          (T_up            ),
-    // .i_T_down        (T_down          ),
-    // .i_sync_period   (i_sync_period   ),
-    // .i_sync_threshold(i_sync_threshold),
-    // .i_last_phase_stb(last_phase_stb  ),
-    // .o_llr_reset     (llr_reset       ),
-    // .o_next_phase    (next_phase      ),
-    // .o_deperf_next_st(deperf_next_st  ),
-    // .o_is_sync       (is_sync         )
-// );
-
 sync_system#(
     .SYNC_PERIOD_WIDTH(SYNC_PERIOD_WIDTH),
     .DEBUG            (DEBUG            )
@@ -514,9 +507,29 @@ always@(*) begin
     endcase
 end
 
-assign o_vld     = deperf_vld;
-assign o_dec_sym = decode_sh[MAX_SH_W-1];
+assign upak_input_data = {{7{1'b0}}, decode_sh[MAX_SH_W-1]};
+// Переупаковка однобитных декодированных символов в байт
+upak#(
+    .NOB(1)
+)upak_isnt(
+    .i_clk         (clk            ),
+    .i_rst         (!reset_n       ),
+    .i_data        (upak_input_data),
+    .i_data_valid  (deperf_vld     ),
+    .i_order       (4'b1           ),
+    .i_isndata     (i_isndata      ),
+    .i_ismirrordata(i_ismirrordata ),
+	.i_ismirrorbyte(i_ismirrorbyte ),
+	.i_ismirrorword(i_ismirrorword ),
+    .o_byte        (o_dec_data     ),
+    .o_byte_valid  (o_vld          )
+);
+
 assign o_is_sync = is_sync;
+
+// FIXME test
+assign test_dec_sym = decode_sh[MAX_SH_W-1];
+assign test_dec_vld = deperf_vld;
 
 
 generate

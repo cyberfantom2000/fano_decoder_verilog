@@ -99,15 +99,17 @@ seq_conv_encoder#(
 
 assign dly_rib[1:0] = dly_data[DELAY*2-1:DELAY*2-2];
 
-hamming_distance hamm_inst(
-    .clk     (clk              ),
-    .reset_n (reset_n          ),
-    .i_mask  (2'b11            ),
-    .i_vld   (encoder_vld      ),
-    .i_a     (dly_rib          ),
-    .i_b     (encoder_data[1:0]),
-    .o_vld   (hamm_vld         ),
-    .o_metric(metric           )
+hamming_distance#(
+	.DEBUG(DEBUG)
+) hamm_inst(
+    .clk     (clk         ),
+    .reset_n (reset_n     ),
+    .i_mask  (2'b11       ),
+    .i_vld   (encoder_vld ),
+    .i_a     (dly_rib     ),
+    .i_b     (encoder_data),
+    .o_vld   (hamm_vld    ),
+    .o_metric(metric      )
 );
 
 // Счетчик ошибок
@@ -152,4 +154,30 @@ assign o_next_phase     = next_phase;
 assign o_deperf_next_st = deperf_next_st;
 assign o_is_sync        = is_sync;
 
+generate
+    if (DEBUG) begin
+        sync_system_ila sync_system_ila_inst(
+        .clk   (clk),
+        .probe0({reset_n,
+				 last_phase,
+				 next_phase,
+				 deperf_next_st,
+				 i_vld,
+				 sh_vld,
+				 encoder_vld,
+				 hamm_vld
+        }),
+        .probe1({period_cntr     [23:0],
+				 err_cntr	     [23:0],
+				 i_sync_period   [23:0],
+				 i_sync_threshold[23:0],
+				 i_code_rate     [1 :0],
+				 encoder_data    [1 :0],
+				 dly_rib		 [1 :0],
+				 dly_data		 [13:0],
+				 metric		     [1 :0]				 
+                })
+        );
+    end
+endgenerate
 endmodule

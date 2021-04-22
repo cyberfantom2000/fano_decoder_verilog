@@ -26,9 +26,9 @@ module fano_decoder_axi #(
     parameter integer C_S_AXI_DATA_WIDTH = 32,
     parameter integer C_S_AXI_ADDR_WIDTH = 32,
     // Общее количество регистров в канале.
-    parameter integer N_REGS = 12,
+    parameter integer N_REGS = 13,
     // Количество регистров только записи.
-    parameter integer N_WR_REGS = 10,
+    parameter integer N_WR_REGS = 11,
     // Количество регистров только чтения.
     parameter integer N_RD_REGS = 2,
     // Отладка.
@@ -46,6 +46,10 @@ module fano_decoder_axi #(
     output [8*N_CHS-1    :0] o_delta_T,
     output [16*N_CHS-1   :0] o_forward_step,
     output [log2(N_CHS)-1:0] o_stream_ch_sel,
+    output [N_CHS-1      :0] o_isndata,
+    output [N_CHS-1      :0] o_ismirrordata,
+    output [N_CHS-1      :0] o_ismirrorbyte,
+    output [N_CHS-1      :0] o_ismirrorword,
     input  [N_CHS-1      :0] i_sync,
 	
     // AXI-Lite
@@ -332,8 +336,8 @@ endgenerate
 generate
     for (ch_idx = 0; ch_idx < N_CHS; ch_idx = ch_idx + 1) begin : in
         always @(posedge s_axi_aclk) begin            
-            slv_regs[ch_idx*N_REGS+10][31:0] <= {{30{1'b0}}, i_sync[ch_idx]};
-            slv_regs[ch_idx*N_REGS+11][31:0] <= N_CHS;
+            slv_regs[ch_idx*N_REGS+11][31:0] <= {{30{1'b0}}, i_sync[ch_idx]};
+            slv_regs[ch_idx*N_REGS+12][31:0] <= N_CHS;
         end
     end
 endgenerate
@@ -354,6 +358,10 @@ generate
         assign o_sync_threshold[24*(ch_idx+1)-1-:24] = slv_regs         [ch_idx*N_REGS+7][23:0];        
         assign o_delta_T       [8*(ch_idx+1)-1-:  8] = slv_regs         [ch_idx*N_REGS+8][7 :0];
         assign o_forward_step  [16*(ch_idx+1)-1-:16] = slv_regs         [ch_idx*N_REGS+9][15:0];
+        assign o_isndata       [ch_idx             ] = slv_regs         [ch_idx*N_REGS+10][0];
+        assign o_ismirrordata  [ch_idx             ] = slv_regs         [ch_idx*N_REGS+10][1];
+        assign o_ismirrorword  [ch_idx             ] = slv_regs         [ch_idx*N_REGS+10][2];
+        assign o_ismirrorbyte  [ch_idx             ] = slv_regs         [ch_idx*N_REGS+10][3];
     end
     
     assign o_stream_ch_sel[log2(N_CHS)-1:0] = slv_regs[1][log2(N_CHS)-1:0];

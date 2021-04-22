@@ -50,12 +50,12 @@ reg  [7  :0] vld_rsn;
 reg          diff_reg;
 reg          parity;
 // каскадный xor. Первая цифра - номер каскада, вторая цифра - последний бит.
-reg [63:0] xor_0;
-reg [31:0] xor_1;
-reg [15:0] xor_2;
-reg [7 :0] xor_3;
-reg [3 :0] xor_4;
-reg [1 :0] xor_5;
+reg xor_0[0:63];
+reg xor_1[0:31];
+reg xor_2[0:15];
+reg xor_3[0:7];
+reg xor_4[0:3];
+reg xor_5[0:1];
 
 
 // Code rate select
@@ -79,18 +79,17 @@ end
 always@(posedge clk) begin
     if (!reset_n) begin
         diff_reg <= 0;
-        vld_rsn  <= 0;
         data_r   <= 0;
         //ish_reg  <= 0;
     end else if (i_vld) begin // end else begin ? FIXME
         //ish_reg[88:0] <= {ish_reg[87:0], i_data};
         // Включение/выклчюение дифф декодера
         if (i_diff_en) begin
-            diff_reg <= data_r[0] ^ i_data;
+            diff_reg <= data_r[1] ^ i_data;
         end else begin
             diff_reg <= i_data;
         end
-        data_r[88:0] <= {data_r[87:0], diff_reg}; 
+        data_r[88:0] <= {data_r[88:1], diff_reg}; 
     end
 end
 
@@ -104,7 +103,7 @@ genvar i;
 generate
     for (i=0; i<64; i++) begin
         always@(posedge clk) begin
-            if (!reset_n) xor_0    <= 0;
+            if (!reset_n) xor_0[i] <= 0;
             else          xor_0[i] <= data_mask[2*i] ^ data_mask[2*i+1];
         end
     end
@@ -113,7 +112,7 @@ endgenerate
 generate
     for (i=0; i<32; i++) begin
         always@(posedge clk) begin
-            if (!reset_n) xor_1    <= 0;
+            if (!reset_n) xor_1[i] <= 0;
             else          xor_1[i] <= xor_0[2*i] ^ xor_0[2*i+1];
         end
     end
@@ -122,7 +121,7 @@ endgenerate
 generate
     for (i=0; i<16; i++) begin
         always@(posedge clk) begin
-            if (!reset_n) xor_2    <= 0;
+            if (!reset_n) xor_2[i] <= 0;
             else          xor_2[i] <= xor_1[2*i] ^ xor_1[2*i+1];
         end
     end
@@ -131,7 +130,7 @@ endgenerate
 generate
     for (i=0; i<8; i++) begin
         always@(posedge clk) begin
-            if (!reset_n) xor_3    <= 0; 
+            if (!reset_n) xor_3[i] <= 0; 
             else          xor_3[i] <= xor_2[2*i] ^ xor_2[2*i+1];
         end
     end
@@ -140,7 +139,7 @@ endgenerate
 generate
     for (i=0; i<4; i++) begin
         always@(posedge clk) begin
-            if (!reset_n) xor_4    <= 0;
+            if (!reset_n) xor_4[i] <= 0;
             else          xor_4[i] <= xor_3[2*i] ^ xor_3[2*i+1];
         end
     end
@@ -149,7 +148,7 @@ endgenerate
 generate
     for (i=0; i<2; i++) begin
         always@(posedge clk) begin
-            if (!reset_n) xor_5    <= 0;
+            if (!reset_n) xor_5[i] <= 0;
             else          xor_5[i] <= xor_4[2*i] ^ xor_4[2*i+1];
         end
     end
@@ -164,5 +163,27 @@ end
 assign o_vld  = vld_rsn[7];
 assign o_data = {data_r[0], parity};
 
+generate
+    if (DEBUG) begin
+        seq_conv_ila seq_conv_ila_inst(
+        .clk   (clk),
+        .probe0({reset_n,
+				 i_vld,
+				 vld_rsn[7:0],
+				 o_vld
+        }),
+        .probe1({i_diff_en,
+				 i_data,
+				 diff_reg,
+				 parity,
+			     o_data     [1  :0],
+				 i_code_rate[1  :0],
+				 data_r     [88 :0],
+				 mask		[88 :0],
+				 data_mask  [127:0]
+                })
+        );
+    end
+endgenerate
 
 endmodule
