@@ -89,8 +89,8 @@ always@(posedge clk) begin
     end else if (i_vld) begin // end else begin ? FIXME
         // Включение/выклчюение дифф декодера
         if (i_diff_en) begin
-            diff_reg0  <= 1'b0 ^ i_data[0];
-            diff_reg1  <= 1'b1 ^ i_data[0];
+            diff_reg0  <= 1'b0 ^ i_data[1];  // 1 бит, а не 0 т.к. 0 по сути в этот момент не известен 
+            diff_reg1  <= 1'b1 ^ i_data[1];  // и его надо декодировать
         end else begin
             diff_reg0  <= 1'b0;
             diff_reg1  <= 1'b1;
@@ -104,14 +104,14 @@ always@(posedge clk) begin
         data_r0 <= 0;
         data_r1 <= 0;
     end else begin
-        data_r0[88:0] <= {i_data[88:1], diff_reg0} & mask[88:0]; 
-        data_r1[88:0] <= {i_data[88:1], diff_reg1} & mask[88:0];
+        data_r0[88:0] <= {i_data[88:1], diff_reg0} ; //[88:1] а не [87:0] потому что заменяем 0 бит, а не сдвигаем
+        data_r1[88:0] <= {i_data[88:1], diff_reg1} ;
     end
 end
 
 // Расширение до 128 чтобы было удобно ксорить.
-assign data_mask0 = {{39{1'b0}}, data_r0[88:0]};
-assign data_mask1 = {{39{1'b0}}, data_r1[88:0]};
+assign data_mask0 = {{39{1'b0}}, data_r0[88:0]} & mask[88:0];
+assign data_mask1 = {{39{1'b0}}, data_r1[88:0]} & mask[88:0];
 
 genvar i;
 // Cascade 0

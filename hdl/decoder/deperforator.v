@@ -56,7 +56,7 @@ fifo_hd fifo_hd_inst(
 );
 
 always@(posedge clk) begin
-    if     (!reset_n    ) flag <= 0;        
+    if     (!reset_n    ) flag <= 0;
     else if(i_sh_pointer) flag <= ~flag;
 end
 

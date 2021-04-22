@@ -45,7 +45,6 @@ reg is_sync;
 reg rst_cnt;
 reg last_phase;
 
-
 always@(posedge clk) begin
     if     (!reset_n || next_st_deperf) last_phase <= 0;
     else if(i_last_phase_stb          ) last_phase <= 1;
@@ -59,7 +58,7 @@ end
 always@(posedge clk) begin
     if(!reset_n || rst_cnt) T_cntr <= 0;
     else if(i_T_up        ) T_cntr <= T_cntr + 1;
-    else if(i_T_down      ) T_cntr <= T_cntr - 1;
+    else if(i_T_down      ) T_cntr <= (T_cntr > 0) ? T_cntr - 1 : 0;
 end
 
 always@(posedge clk) begin

@@ -59,7 +59,7 @@ end
 //============================================================================================================//
 //												Test block's											      //
 //============================================================================================================//
-localparam MODULATION_TYPE = 0;  // 1 - qpsk, else - bpsk
+localparam MODULATION_TYPE = 1;  // 1 - qpsk, 0 - bpsk
 
 wire shift_phase;
 wire llr_reset;
@@ -227,6 +227,7 @@ fano_decoder#(
     .i_code_rate      (2'b0     ),
     .i_sync_period    (24'd40000),
     .i_sync_threshold (15'd100  ),
+    .i_angle_step     (3'd2     ),
     .i_vld            (vld      ),  // VAL_REG
     .i_data_I         (I        ),
     .i_data_Q         (Q        ),

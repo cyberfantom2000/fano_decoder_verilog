@@ -59,13 +59,7 @@ localparam code_len7_8 = 89;
 localparam mask_1_2    = 89'hFFFFFFFFF;
 localparam mask_3_4    = 89'h7FFFFFFFFFFFFFFF;
 localparam mask_7_8    = 89'h1FFFFFFFFFFFFFFFFFFFFFF;
-// FSM state
-localparam INIT          = 0;   // Инициализация после сброса
-localparam IDLE          = 1;   // Висим здесь если все символы декодированы
-localparam METRIC_CALC   = 2;   // Вычисление метрик принятого ребра и полученных из RIB_CALC
-localparam FORWARD_MOVE  = 3;
-localparam BACKWARD_MOVE = 4;
-localparam CHECK_POINTER = 5;
+
 
 genvar i;
 
@@ -130,7 +124,6 @@ reg                reset_n_rsn;
 wire               last_phase_stb;
 wire               next_phase;
 wire               is_sync;
-wire               llr_reset;
 
 reg               vld_rsn;
 reg[IQ_WIDTH-1:0] I_rsn, Q_rsn;
@@ -155,7 +148,7 @@ llr_former#(
     .i_ctrl_valid     (i_ctrl_vld      ),
     
     .i_clk            (clk             ),
-    .i_reset          (!reset_n_rsn || llr_reset),    
+    .i_reset          (!reset_n_rsn    ),    
     .i_mod_type       (i_llr_offset_mod), //   0 - обычная, 1 - офсетная.  // FIXME: одно и тоже что дифф. декодер?
     .i_llr_order      (i_llr_order     ),
     .i_angle_step     (i_angle_step    ),
@@ -336,19 +329,39 @@ end
 
 
 // Поиск синхронизации
-simple_sync_system#(
-    .SYNC_PERIOD_WIDTH(SYNC_PERIOD_WIDTH),    
+// simple_sync_system#(
+    // .SYNC_PERIOD_WIDTH(SYNC_PERIOD_WIDTH),    
+    // .DEBUG            (DEBUG            )
+// )sync_system_inst(
+    // .clk             (clk             ),
+    // .reset_n         (reset_n         ),
+    // .i_vld           (deperf_vld      ),
+    // .i_T_up          (T_up            ),
+    // .i_T_down        (T_down          ),
+    // .i_sync_period   (i_sync_period   ),
+    // .i_sync_threshold(i_sync_threshold),
+    // .i_last_phase_stb(last_phase_stb  ),
+    // .o_llr_reset     (llr_reset       ),
+    // .o_next_phase    (next_phase      ),
+    // .o_deperf_next_st(deperf_next_st  ),
+    // .o_is_sync       (is_sync         )
+// );
+
+sync_system#(
+    .SYNC_PERIOD_WIDTH(SYNC_PERIOD_WIDTH),
     .DEBUG            (DEBUG            )
 )sync_system_inst(
     .clk             (clk             ),
     .reset_n         (reset_n         ),
-    .i_vld           (deperf_vld      ),
-    .i_T_up          (T_up            ),
-    .i_T_down        (T_down          ),
+    .i_diff_en       (i_diff_en       ),
+    .i_code_rate     (i_code_rate     ),
     .i_sync_period   (i_sync_period   ),
     .i_sync_threshold(i_sync_threshold),
+    .i_vld           (deperf_vld      ),
+    .i_source_word   ({sh_d[MAX_SH_W-1], sh_p[MAX_SH_W-1]}),
+    .i_dec_sym       (decode_sh[MAX_SH_W-1]),
     .i_last_phase_stb(last_phase_stb  ),
-    .o_llr_reset     (llr_reset       ),
+//    .o_llr_reset     (llr_reset       ),
     .o_next_phase    (next_phase      ),
     .o_deperf_next_st(deperf_next_st  ),
     .o_is_sync       (is_sync         )
@@ -389,6 +402,14 @@ end
 
 
 //---------   FSM    -----------//
+// FSM state
+localparam INIT          = 0;   // Инициализация после сброса
+localparam IDLE          = 1;   // Висим здесь если нет символов для декодированы
+localparam METRIC_CALC   = 2;   // Вычисление метрик принятого ребра и полученных из RIB_CALC
+localparam FORWARD_MOVE  = 3;
+localparam BACKWARD_MOVE = 4;
+localparam CHECK_POINTER = 5;
+
 always@(posedge clk) begin
     if(!nlocal_rst) state <= INIT;
     else            state <= nextstate;

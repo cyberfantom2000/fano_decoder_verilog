@@ -44,7 +44,7 @@ localparam[88:0] mask_7_8 = 89'o77663166177600720153763372136;  // FIXME!
 //**********  Declaration  **********//
 wire [127:0] data_mask;
 reg  [88 :0] data_r;
-reg  [88 :0] ish_reg;
+// reg  [88 :0] ish_reg;
 reg  [88 :0] mask = mask_1_2;
 reg  [7  :0] vld_rsn;
 reg          diff_reg;
@@ -79,24 +79,25 @@ end
 always@(posedge clk) begin
     if (!reset_n) begin
         diff_reg <= 0;
-        data_r   <= 0;
         vld_rsn  <= 0;
-        ish_reg  <= 0;
+        data_r   <= 0;
+        //ish_reg  <= 0;
     end else if (i_vld) begin // end else begin ? FIXME
-        ish_reg[88:0] <= {ish_reg[87:0], i_data};
+        //ish_reg[88:0] <= {ish_reg[87:0], i_data};
         // Включение/выклчюение дифф декодера
         if (i_diff_en) begin
-            diff_reg <= ish_reg[0] ^ i_data;
+            diff_reg <= data_r[0] ^ i_data;
         end else begin
             diff_reg <= i_data;
-        end             
-    end else begin
-        data_r[88:0] <= {data_r[87:0], diff_reg} & mask[88:0]; 
+        end
+        data_r[88:0] <= {data_r[87:0], diff_reg}; 
     end
 end
 
+
+
 // Расширение до 128 чтобы было удобно ксорить.
-assign data_mask[127:0] = {{39{1'b0}}, data_r[88:0]};
+assign data_mask[127:0] = {{39{1'b0}}, data_r[88:0]} & mask[88:0];
 
 genvar i;
 // Cascade 0
