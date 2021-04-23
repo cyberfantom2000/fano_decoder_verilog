@@ -23,18 +23,19 @@ import math_pkg::*;
 module sequence_decoder#(
     parameter integer C_S_AXI_DATA_WIDTH = 32,
     parameter integer C_S_AXI_ADDR_WIDTH = 32,
-    parameter integer N_CHS              = 1,              // Количество каналов. Максимально допустимое значение - 16.
+    parameter integer N_CHS              = 1,             // Количество каналов. Максимально допустимое значение - 16.
+    parameter integer NOB_WIDTH          = 4,
     parameter         SYNC_PERIOD_WIDTH  = 24,
     parameter         MAX_SH_W           = 180,
     parameter         IQ_WIDTH           = 10,
     parameter         DEBUG              = 1
 )(
-    input                clk,
-    input [N_CHS-1   :0] i_vld,
-    input [10*N_CHS-1:0] i_data_I,
-    input [10*N_CHS-1:0] i_data_Q,
-    output[N_CHS-1   :0] o_vld,
-    output[8*N_CHS-1 :0] o_dec_data,
+    input                          clk,
+    input [N_CHS-1             :0] i_vld,
+    input [10*N_CHS-1          :0] i_data_I,
+    input [10*N_CHS-1          :0] i_data_Q,
+    output[N_CHS-1             :0] o_vld,
+    output[8*NOB_WIDTH*N_CHS-1 :0] o_dec_data,
     // ctrl stream
     input        i_ctrl_clk,
     input        i_ctrl_vld,
@@ -88,6 +89,7 @@ generate
             .SYNC_PERIOD_WIDTH(SYNC_PERIOD_WIDTH),
             .MAX_SH_W         (MAX_SH_W         ),
             .IQ_WIDTH         (IQ_WIDTH         ),
+            .NOB_WIDTH        (NOB_WIDTH        ),
             .DEBUG            (DEBUG            )            
         )fano_decoder_inst(
             .clk             (clk                                ),
@@ -105,7 +107,7 @@ generate
             .i_delta_T       (delta_T       [8*(ch_idx+1)-1-:  8]),
             .i_forward_step  (forward_step  [16*(ch_idx+1)-1-:16]),
             .o_vld           (o_vld         [ch_idx             ]),
-            .o_dec_data      (o_dec_data    [8*(ch_idx+1)-1-:  8]),
+            .o_dec_data      (o_dec_data    [8*NOB_WIDTH*(ch_idx+1)-1-:8]),
             .o_is_sync       (sync          [ch_idx             ]),
             // upak param 
             .i_isndata       (isndata       [ch_idx             ]),

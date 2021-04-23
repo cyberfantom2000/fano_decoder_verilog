@@ -21,10 +21,11 @@
 
 
 module fano_decoder#(
-    parameter SYNC_PERIOD_WIDTH   = 24,
-    parameter MAX_SH_W            = 256,   // Максимальное число шагов назад
-    parameter IQ_WIDTH            = 10,
-    parameter DEBUG               = 0
+    parameter SYNC_PERIOD_WIDTH  = 24,
+    parameter MAX_SH_W           = 256,  // Максимальное число шагов назад
+    parameter IQ_WIDTH           = 10,
+    parameter integer NOB_WIDTH  = 4,    // Размерность шины декодированных данных в байтах.
+    parameter DEBUG              = 0
 )(
     input                         clk,
     input                         reset_n,
@@ -41,7 +42,7 @@ module fano_decoder#(
     input [7                  :0] i_delta_T,
     input [15                 :0] i_forward_step,     // Кол-во шагов вперед после которого нормируются метрики
     output                        o_vld,
-    output[7                  :0] o_dec_data,
+    output[8*NOB_WIDTH-1      :0] o_dec_data,
     output                        o_is_sync,
     
     //test port
@@ -510,7 +511,7 @@ end
 assign upak_input_data = {{7{1'b0}}, decode_sh[MAX_SH_W-1]};
 // Переупаковка однобитных декодированных символов в байт
 upak#(
-    .NOB(1)
+    .NOB(NOB_WIDTH)
 )upak_isnt(
     .i_clk         (clk            ),
     .i_rst         (!reset_n       ),
@@ -557,7 +558,6 @@ generate
                  T_up,
                  A_bit_erase,
                  inverse_A,
-                 llr_reset,
                  next_phase,
                  last_phase_stb,
                  llr_hd,
@@ -580,7 +580,7 @@ generate
                  i_sync_period   [23 :0],
                  i_sync_threshold[23 :0],
                  i_forward_step  [15 :0],
-                 o_dec_sym,
+                 o_dec_data      [31 :0],
                  forward_cnt     [11 :0],
                  A               [179:0],
                  pointer         [179:0],
