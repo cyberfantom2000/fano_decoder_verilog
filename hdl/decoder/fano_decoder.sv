@@ -180,14 +180,14 @@ llr_former#(
 );
 
 
-// Восстановление до кода 1/2 + сдвиг при отсутствии синхронизации
 deperforator#(
     .DEBUG  (DEBUG)
 )deperforator_inst(
     .clk         (clk           ),
     .reset_n     (reset_n_rsn   ),
-    .i_sh_pointer(deperf_next_st),
     .i_llr_order (i_llr_order   ),
+    .i_code_rate (i_code_rate   ),
+    .i_sh_pointer(deperf_next_st),
     .i_vld       (llr_vld       ),
     .i_data      (llr_hd        ),
     .o_vld       (deperf_vld    ),
@@ -432,7 +432,7 @@ always@(*) begin
         // Инициализация стартового состояния
         INIT: begin
             start_init = 1;
-            mp_check   = 0;
+            //mp_check   = 0;
             nextstate  = IDLE;
         end
         
@@ -446,11 +446,11 @@ always@(*) begin
             end
             // Если появились новые слова для декодирования
             if(pointer > 0) begin
-                mp_check       = 0;
+                //mp_check       = 0;
                 start_rib_calc = 1;
                 A_bit_erase    = 1; // FIXME: или он должен быть в metric calc&?
                 nextstate      = METRIC_CALC;            
-            end    
+            end 
         end
 
         // Расчет метрик между текущим ребром и предполагаемыми из кодера.
@@ -459,18 +459,18 @@ always@(*) begin
             norm_en   = 1;
             T_down    = 0;            
             
-            if(metric_vld_sh || mp_check) begin
+            if(metric_vld_sh /*|| mp_check*/) begin
                 if(Ms >= T) begin
                     forward_move = 1;
-                    mp_check  = 0;
+                    //mp_check  = 0;
                     nextstate = FORWARD_MOVE;
                 end else if(Mp >= T) begin
                     back_move = 1;
-                    mp_check  = 0;
+                    //mp_check  = 0;
                     nextstate = BACKWARD_MOVE;
                 end else begin
                     T_down    = 1;
-                    mp_check  = 1;
+                    //mp_check  = 1;
                     nextstate = IDLE;//(forward_cnt == 0) ? IDLE : METRIC_CALC; // IDLE
                 end
             end
@@ -479,6 +479,7 @@ always@(*) begin
         // Движение вперед по кодовому древу, если не пересекли порог
         FORWARD_MOVE: begin
             nextstate = FORWARD_MOVE;
+            norm_en = 1;
             if(forward_move_sh) begin   // FIXME ??????
                 // if(Mp < (T + i_delta_T)) T_up = 1;
                 if(Mp < thresh) T_up = 1;
@@ -489,6 +490,7 @@ always@(*) begin
         // Движение назад по кодовому древу, если пересекли порог
         BACKWARD_MOVE: begin
             nextstate = BACKWARD_MOVE;
+            norm_en = 1;
             if(metric_vld_mp_sh) begin
                 if (A[pointer-1]) begin //if (A[pointer]) begin // В прошлый раз в этом узле ходили по худшему пути? Да - отступаем еще на один узел назад. Нет - пробуем пойти по худшему.
                     if(Mp >= T) begin
@@ -505,6 +507,12 @@ always@(*) begin
                 end
             end
         end
+        
+        // Из-за этой хрени возникает timing loop
+        /*default: begin
+            nextstate = IDLE;
+            norm_en = 1;
+        end*/
     endcase
 end
 
@@ -544,7 +552,7 @@ generate
                  o_vld,
                  o_is_sync,
                  start_init,
-                 mp_check,
+                 //mp_check,
                  metric_norm,
                  norm_en,
                  start_rib_calc,

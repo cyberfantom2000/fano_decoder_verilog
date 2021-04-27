@@ -334,8 +334,8 @@ assign llr_ram_rd_addr[2*IQ_RAM_WIDTH-1:0] = {
 };
 	
 initial begin
-    // $readmemb("llr_bpsk.mif", llr_ram, 0, 16383);
-    $readmemb("llr_qpsk.mif", llr_ram, 0, 16383);
+    $readmemb("llr_bpsk.mif", llr_ram, 0, 16383);
+    // $readmemb("llr_qpsk.mif", llr_ram, 0, 16383);
     // $readmemb("llr_8psk.mif", llr_ram, 0, 16383);
 end
 

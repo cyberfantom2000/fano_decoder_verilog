@@ -26,22 +26,65 @@ module deperforator#(
     input       clk,
     input       reset_n,
     input [2:0] i_llr_order,
+    input [1:0] i_code_rate,    // 0 - 1/2; 1 - 3/4, 2 - 7/8
     input       i_sh_pointer,
     input       i_vld,
     input       i_data,
     output      o_vld,
     output[1:0] o_data
 );
-    
-reg [1 :0] rden_sh;
-reg        rden;
-reg        flag = 0;
+
 wire       full, empty;
-wire       dout;
 wire[10:0] data_count;
-reg [3 :0] sh_reg;
-reg        out_vld;
-wire       read_enable = i_llr_order == 3'd2 ?  rden_sh[0] : rden_sh[1];
+wire       dout;
+reg        flag = 0;
+reg        read_enable;
+reg [1 :0] rden_sh;
+reg        vld_out;
+reg        fifo_sh[6:0];
+reg [4:0]  max_cnt;
+reg [4:0]  cnt;
+
+always@(posedge clk) begin
+    if     (!reset_n    ) flag <= 0;
+    else if(i_sh_pointer) flag <= ~flag;
+end
+
+always@(posedge clk) begin
+    case(i_code_rate)
+        2'b00  : max_cnt <= 1;
+        2'b01  : max_cnt <= 5;
+        2'b10  : max_cnt <= 13;
+        default: max_cnt <= 1;
+    endcase
+end
+
+
+always@(posedge clk) begin
+    case(i_llr_order)
+        3'd1  : begin 
+            if(read_enable & !rden_sh[0]) vld_out <= 1;
+            else                          vld_out <= 0;
+        end
+        
+        3'd2  : begin 
+            if(rden_sh[0] & !rden_sh[1]) vld_out <= 1;
+            else                         vld_out <= 0;
+        end
+        
+        default: begin
+            if(rden_sh[0] & !rden_sh[1]) vld_out <= 1;
+            else                         vld_out <= 0;
+        end
+    endcase
+end
+
+
+always@(posedge clk) begin
+    if     (!reset_n    ) cnt <= 0;
+    else if(i_sh_pointer) cnt <= (cnt == max_cnt) ? 0 : cnt + 1;
+end
+
 
 fifo_hd fifo_hd_inst(
     .clk       (clk        ),
@@ -56,65 +99,40 @@ fifo_hd fifo_hd_inst(
 );
 
 always@(posedge clk) begin
-    if     (!reset_n    ) flag <= 0;
-    else if(i_sh_pointer) flag <= ~flag;
-end
-
-always@(posedge clk) begin
-    if(!reset_n        ) sh_reg[3:0] <= 0;
-    else if(read_enable) sh_reg[3:0] <= {sh_reg[2:0], dout};  // FIXME. rden_sh[0]
+    if(!reset_n)
+        read_enable <= 0;
+    else if(data_count > 1 && !rden_sh[0])
+        read_enable <= 1; 
+    else
+        read_enable <= 0;
 end
 
 always@(posedge clk) begin
     if(!reset_n) rden_sh[1:0] <= 0;
-    else         rden_sh[1:0] <= {rden_sh[0], rden};
+    else         rden_sh[1:0] <= {rden_sh[0], read_enable};
 end
 
 
-//---------   FSM    -----------//
-reg[2:0] state, nextstate;
 
-localparam IDLE    = 0;
-localparam RD_FIFO = 1;
-localparam WAIT    = 2;
-
-always@(posedge clk) begin
-    if(!reset_n) state <= IDLE;
-    else         state <= nextstate;
-end
-
-always@(*) begin
-    nextstate = 'hX;
-    rden      = 0;
-    out_vld   = 0;
-    
-    case(state)
-        IDLE: begin
-            nextstate = IDLE;
-            if(data_count >= 2 && !i_vld) begin
-                rden      = 1;
-                nextstate = RD_FIFO;
+genvar i;
+generate
+    for(i=0; i<7; i=i+1) begin
+        if(i==0) begin
+            always@(posedge clk) begin
+                if(!reset_n)         fifo_sh[i] <= 0;
+                else if(read_enable) fifo_sh[i] <= dout;
+            end
+        end else begin
+            always@(posedge clk) begin
+                if(!reset_n)         fifo_sh[i] <= 0;
+                else if(read_enable) fifo_sh[i] <= fifo_sh[i-1];
             end
         end
-        
-        RD_FIFO: begin
-            nextstate = RD_FIFO;
-            rden      = 1;
-            if(rden_sh[1]) begin
-                rden      = 0;
-                nextstate = WAIT;
-            end
-        end
-        
-        WAIT: begin
-            nextstate = IDLE;
-            out_vld   = 1;
-        end
-    endcase
-end
+    end
+endgenerate
 
-assign o_vld  = out_vld;
-assign o_data = flag ? sh_reg[2:1] : sh_reg[1:0]; 
+assign o_vld  = vld_out;
+assign o_data = {fifo_sh[cnt+1], fifo_sh[cnt]};
 
 
 generate
